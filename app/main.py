@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import pauta, publora, webpush
+from .robos import rodada as robo_rodada
 from .cards import fotos
 from .cards.render import MODELOS, renderizador
 
@@ -174,7 +175,7 @@ async def lifespan(app: FastAPI):
     await vapid()
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
-    tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta())]
+    tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada())]
     yield
     for t in tasks:
         t.cancel()
@@ -708,6 +709,60 @@ async def pauta_status(_=Depends(exige_login)):
     }
 
 
+# ------------------------------------------------------- robô: rodada ----
+
+RODADA_HORA = int(os.getenv("RODADA_HORA", "7"))  # monta às 7h (sugestão de publicação 9h)
+
+
+async def gerar_rodada(dia=None, forcar: bool = False) -> dict[str, Any]:
+    dia = dia or datetime.now(robo_rodada.TZ).date()
+    chave_dia = f"rodada_{dia.isoformat()}"
+    if not forcar and await cfg_get(chave_dia):
+        return {"ok": False, "motivo": "a rodada de hoje já foi gerada"}
+    jogos = await robo_rodada.jogos_do_dia(dia)
+    handle = await pool.fetchval("SELECT handle FROM perfis WHERE ativo ORDER BY id LIMIT 1") or "seutipster.app"
+    pedido = robo_rodada.montar(jogos, dia, handle)
+    if not pedido:
+        await cfg_set(chave_dia, "sem_jogos")
+        return {"ok": True, "jogos": 0, "motivo": "nenhum jogo das ligas prioritárias hoje"}
+    pid, avisos = await criar_post_de_slides(pedido, "robo")
+    await cfg_set(chave_dia, str(pid))
+    return {"ok": True, "jogos": len(jogos), "slides": len(pedido["slides"]), "id": str(pid), "avisos": avisos}
+
+
+async def job_rodada() -> None:
+    await asyncio.sleep(30)
+    while True:
+        try:
+            agora = datetime.now(robo_rodada.TZ)
+            if agora.hour >= RODADA_HORA and robo_rodada.chave():
+                r = await gerar_rodada(agora.date())
+                if r.get("ok"):
+                    log.info("[RODADA] %s", r)
+        except Exception as e:
+            log.warning("[RODADA] %s", e)
+            await enviar_push({"title": "⚠️ Rodada do dia falhou", "body": str(e)[:120], "url": "/"})
+            await asyncio.sleep(1800)  # não insiste em loop; tenta de novo em 30 min
+        await asyncio.sleep(120)
+
+
+class RodadaIn(BaseModel):
+    data: Optional[str] = None  # AAAA-MM-DD; vazio = hoje
+    forcar: bool = False
+
+
+@app.post("/api/robos/rodada")
+async def rodada_manual(body: RodadaIn, _=Depends(exige_login)):
+    from datetime import date as _date
+    try:
+        dia = _date.fromisoformat(body.data) if body.data else None
+        return await gerar_rodada(dia, body.forcar)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, str(e)[:300])
+
+
 @app.post("/api/robo/posts")
 async def novo_robo(body: RoboPostIn, _=Depends(exige_robo)):
     perfil_id = body.perfil_id
@@ -923,6 +978,7 @@ async def saude(request: Request, _=Depends(exige_login)):
         out["publora"] = {"ok": False, "erro": str(e)[:300]}
     out["push_inscritos"] = await pool.fetchval("SELECT count(*) FROM push_subs")
     out["robo_configurado"] = bool(ROBO_KEY)
+    out["api_football"] = bool(robo_rodada.chave())
     return out
 
 

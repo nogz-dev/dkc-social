@@ -119,6 +119,7 @@ document.addEventListener("click", (e) => {
   else if (act === "sincronizar") sincronizar();
   else if (act === "pauta") buscarPauta();
   else if (act === "auto") alternarAuto();
+  else if (act === "rodada") gerarRodada();
   else if (act === "sair") sair();
 });
 
@@ -367,6 +368,9 @@ async function renderAjustes() {
     <div class="box"><h3>Publicação automática</h3><p>Só posts de <b>resultado final</b> dos principais jogos saem sem aprovação. Todo o resto passa pela fila.</p>
       <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
+    <div class="box"><h3>Robô da Rodada do dia</h3><p>Todo dia às 7h monta o carrossel com os jogos das ligas prioritárias e manda para a fila, com sugestão de publicar às 9h.</p>
+      <div class="linha"><span>API-Football</span><span id="ajApiF" class="muted">…</span></div>
+      <button class="btn" data-act="rodada">Gerar a rodada de hoje agora</button></div>
     <div class="box"><h3>Pauta do Claude</h3><p>Posts que o Claude prepara no chat chegam por aqui sozinhos.</p>
       <div id="ajPauta"><p>Verificando…</p></div>
       <button class="btn" data-act="pauta">Buscar pauta agora</button></div>
@@ -374,9 +378,11 @@ async function renderAjustes() {
     <div class="box"><h3>Sessão</h3><p>Sair deste aparelho.</p><button class="btn danger" data-act="sair">Sair</button></div>`;
   try {
     const s = await api("/api/saude");
+    const af = $("#ajApiF"); if (af) af.innerHTML = s.api_football ? `<span class="ok">Conectada</span>` : `<span class="nok">Falta a chave</span>`;
     $("#ajSaude").innerHTML = `
       <div class="linha"><span>Publora</span>${s.publora.ok ? `<span class="ok">Conectado (${s.publora.conexoes} conta${s.publora.conexoes === 1 ? "" : "s"})</span>` : `<span class="nok">${esc(s.publora.erro)}</span>`}</div>
       <div class="linha"><span>Aparelhos com notificação</span><span>${s.push_inscritos}</span></div>
+      <div class="linha"><span>API-Football</span>${s.api_football ? `<span class="ok">Chave configurada</span>` : `<span class="nok">Falta API_FOOTBALL_KEY</span>`}</div>
       <div class="linha"><span>Robôs</span>${s.robo_configurado ? `<span class="ok">Chave configurada</span>` : `<span class="muted">Sem chave (fatia 3)</span>`}</div>
       <div class="linha"><span>Endereço público</span><span class="muted">${esc(s.base_publica)}</span></div>`;
   } catch (err) { $("#ajSaude").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
@@ -393,6 +399,16 @@ async function renderAjustes() {
       <div class="linha"><span>Frequência</span><span class="muted">a cada ${Math.round(p.intervalo_s / 60 * 10) / 10} min</span></div>
       ${p.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(p.erro)}</span></div>` : ""}${ult}`;
   } catch (err) { $("#ajPauta").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+}
+
+async function gerarRodada() {
+  try {
+    toast("Montando a rodada…");
+    let r = await api("/api/robos/rodada", { method: "POST", json: {} });
+    if (!r.ok && r.motivo && confirm(r.motivo + ". Gerar de novo mesmo assim?")) r = await api("/api/robos/rodada", { method: "POST", json: { forcar: true } });
+    if (r.ok) toast(r.jogos ? `Rodada na fila: ${r.jogos} jogos em ${r.slides} slides` : r.motivo);
+    carregarResumo().then(montarNav);
+  } catch (err) { toast(err.message, true); }
 }
 
 async function alternarAuto() {

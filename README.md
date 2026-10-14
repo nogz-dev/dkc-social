@@ -58,3 +58,11 @@ re-tentados até 3 vezes. Variáveis opcionais: `GITHUB_TOKEN`, `PAUTA_REPO`,
 `PAUTA_BRANCH`, `PAUTA_DIR`, `PAUTA_INTERVALO`.
 
 Pré-visualizar localmente: `CARD_ALLOW_FILE=1 python -m tools.preview pauta.json saida/`
+
+## Robô da Rodada do dia
+Todo dia às 7h (`RODADA_HORA`) busca na API-Football os jogos das ligas
+prioritárias (Libertadores, Brasileirão, Copa do Brasil, Sul-Americana,
+Champions, Premier, LaLiga, Serie A, Bundesliga, Ligue 1) e manda um carrossel
+para a fila com sugestão de publicar às 9h: capa + card de destaque para ligas
+com até 2 jogos + lista por liga. Precisa de `API_FOOTBALL_KEY`.
+Gerar manualmente: Ajustes → "Gerar a rodada de hoje agora" (`POST /api/robos/rodada`).

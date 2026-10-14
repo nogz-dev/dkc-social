@@ -18,5 +18,5 @@
   {% if d.linha_fina %}<p class="linha-fina">{{ d.linha_fina }}</p>{% endif %}
   {% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
 </div>
-{% if d.arrasta %}<div class="arrasta">ARRASTA →</div>{% endif %}
+{% if d.arrasta %}<div class="arrasta" style="top:76px;bottom:auto">ARRASTA →</div>{% endif %}
 {% endblock %}

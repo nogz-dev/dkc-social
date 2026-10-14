@@ -8,6 +8,10 @@
 .lado b{font-weight:900;font-size:38px;text-transform:uppercase;letter-spacing:-.5px;line-height:1.05;max-width:340px}
 .gols{display:flex;align-items:center;gap:26px;font-weight:900;font-size:220px;letter-spacing:-8px;line-height:1;padding:0 10px}
 .gols i{font-style:normal;color:var(--cor);font-size:120px}
+.hora-jogo{display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 10px}
+.hora-jogo b{font-weight:900;font-size:120px;letter-spacing:-4px;line-height:1;color:var(--cor)}
+.hora-jogo span{font-weight:700;font-size:26px;letter-spacing:3px;color:var(--mute);text-transform:uppercase}
+.info-jogo{position:absolute;left:64px;right:64px;top:720px;text-align:center;z-index:5;font-weight:600;font-size:28px;color:var(--ink);opacity:.9;text-transform:uppercase;letter-spacing:2px;line-height:1.5}
 .autores{position:absolute;left:64px;right:64px;top:760px;display:grid;grid-template-columns:1fr 1fr;gap:40px;z-index:5;font-weight:500;font-size:24px;color:var(--ink);opacity:.9;line-height:1.55}
 .autores .d{text-align:right}
 .bloco{position:absolute;left:64px;right:64px;bottom:150px;z-index:5}
@@ -16,12 +20,15 @@
 {% block corpo %}
 {% if d.foto %}<div class="foto" style="background-image:url('{{ d.foto }}')"></div>{% endif %}<div class="sombra"></div>
 {% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
-<div class="tags"><div class="pill">{{ d.tag or 'FIM DE JOGO' }}</div>{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
+{% set antes = d.gols_casa is none %}
+<div class="tags"><div class="pill">{{ d.tag or ('HOJE' if antes else 'FIM DE JOGO') }}</div>{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
 <div class="placar">
   <div class="lado">{% if d.escudo_casa %}<img src="{{ d.escudo_casa }}" alt="">{% endif %}<b>{{ d.casa }}</b></div>
-  <div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>
+  {% if antes %}<div class="hora-jogo"><b>{{ d.hora }}</b><span>{{ d.hora_label or 'Brasília' }}</span></div>
+  {% else %}<div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>{% endif %}
   <div class="lado">{% if d.escudo_fora %}<img src="{{ d.escudo_fora }}" alt="">{% endif %}<b>{{ d.fora }}</b></div>
 </div>
+{% if antes and d.info %}<div class="info-jogo">{{ d.info }}</div>{% endif %}
 {% if d.autores_casa or d.autores_fora %}
 <div class="autores"><div>{% for a in d.autores_casa or [] %}{{ a }}<br>{% endfor %}</div><div class="d">{% for a in d.autores_fora or [] %}{{ a }}<br>{% endfor %}</div></div>
 {% endif %}
