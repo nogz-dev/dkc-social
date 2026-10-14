@@ -4,16 +4,32 @@
   "linha": "rodada",
   "titulo": "Hoje: Flu x Palmeiras, semi da Libertadores",
   "fonte": "Oficina da Net",
-  "sugerido_para": "2026-10-14T21:00:00Z",
   "legenda": "Hoje às 21h30 o Maracanã recebe Fluminense x Palmeiras, ida da semifinal da Libertadores.\n\nA volta é na casa do Palmeiras, então o Flu precisa construir a vantagem agora.\n\nAntes, às 19h, o Atlético-MG encara o Montevideo City Torque na Arena MRV, ida da semi da Sul-Americana.\n\nQuem vai à final: Flu ou Verdão? Comenta aí 👇\n\n#Libertadores #Fluminense #Palmeiras #SulAmericana",
   "slides": [
-    {"modelo": "noticia", "dados": {
-      "foto": "https://commons.wikimedia.org/wiki/Special:FilePath/Rio_de_Janeiro_Maracanã_Stadium_2.jpg?width=1600",
-      "foco": "center 40%",
-      "credito_foto": "Foto: Wikimedia Commons",
-      "tag": "Hoje", "tag2": "Libertadores",
-      "titulo": "Fluminense x Palmeiras abre a *semi da Libertadores*",
-      "fatos": [{"n": "21H30", "l": "horário de Brasília"}, {"n": "IDA", "l": "semifinal"}, {"n": "GLOBO", "l": "e Paramount+"}]
-    }}
+    {
+      "modelo": "noticia",
+      "dados": {
+        "foto": "https://commons.wikimedia.org/wiki/Special:FilePath/Rio_de_Janeiro_Maracanã_Stadium_2.jpg?width=1600",
+        "foco": "center 40%",
+        "credito_foto": "Foto: Wikimedia Commons",
+        "tag": "Hoje",
+        "tag2": "Libertadores",
+        "titulo": "Fluminense x Palmeiras abre a *semi da Libertadores*",
+        "fatos": [
+          {
+            "n": "21H30",
+            "l": "horário de Brasília"
+          },
+          {
+            "n": "IDA",
+            "l": "semifinal"
+          },
+          {
+            "n": "GLOBO",
+            "l": "e Paramount+"
+          }
+        ]
+      }
+    }
   ]
 }
