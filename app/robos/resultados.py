@@ -15,7 +15,7 @@ import httpx
 from . import rodada
 
 INTERVALO_MIN = int(os.getenv("RESULTADOS_INTERVALO_MIN", "5"))
-TETO_DIA = int(os.getenv("RESULTADOS_TETO_DIA", "12"))
+TETO_DIA = int(os.getenv("RESULTADOS_TETO_DIA", "0"))  # 0 = sem limite
 FIM = {"FT", "AET", "PEN"}
 
 # competições em que TODO jogo é principal

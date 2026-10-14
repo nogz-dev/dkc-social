@@ -405,7 +405,7 @@ async function renderAjustes() {
     const r = await api("/api/robos/resultados"); S.res = r;
     $("#ajRes").innerHTML = `
       <div class="linha"><span>Status</span>${!r.tem_chave ? `<span class="nok">Falta API_FOOTBALL_KEY</span>` : r.ligado ? `<span class="ok">Ligado · a cada ${r.intervalo_min} min</span>` : `<span class="nok">Desligado</span>`}</div>
-      <div class="linha"><span>Hoje</span><span>${r.postados_hoje} de ${r.teto_dia} resultados</span></div>
+      <div class="linha"><span>Hoje</span><span>${r.postados_hoje} resultado${r.postados_hoje === 1 ? "" : "s"}${r.teto_dia ? ` de ${r.teto_dia}` : " · sem limite"}</span></div>
       <div class="linha"><span>Última conferida</span><span class="muted">${r.ultima ? quando(r.ultima) : "ainda não"}</span></div>
       ${r.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(r.erro)}</span></div>` : ""}`;
     $("#bRes").textContent = r.ligado ? "Desligar robô" : "Ligar robô";
@@ -415,7 +415,7 @@ async function renderAjustes() {
     const tk = n.uso_hoje.in + n.uso_hoje.out;
     $("#ajNot").innerHTML = `
       <div class="linha"><span>Status</span>${!n.tem_chave ? `<span class="nok">Falta ANTHROPIC_API_KEY</span>` : n.ligado ? `<span class="ok">Ligado · a cada ${n.intervalo_min} min</span>` : `<span class="nok">Desligado</span>`}</div>
-      <div class="linha"><span>Hoje</span><span>${n.postados_hoje} de ${n.teto_dia} notícias</span></div>
+      <div class="linha"><span>Hoje</span><span>${n.postados_hoje} notícia${n.postados_hoje === 1 ? "" : "s"}${n.teto_dia ? ` de ${n.teto_dia}` : " · sem limite"}</span></div>
       <div class="linha"><span>Portais respondendo</span><span class="${n.feeds_total && n.feeds_ok < n.feeds_total / 2 ? "nok" : "muted"}">${n.feeds_total ? `${n.feeds_ok} de ${n.feeds_total}` : "ainda não rodou"}</span></div>
       <div class="linha"><span>Uso da IA hoje</span><span class="muted">${Math.round(tk / 1000)} mil de ${Math.round(n.limite_tokens / 1000)} mil tokens</span></div>
       <div class="linha"><span>Última varredura</span><span class="muted">${n.ultima ? quando(n.ultima) : "ainda não"}</span></div>

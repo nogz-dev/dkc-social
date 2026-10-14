@@ -70,11 +70,11 @@ def feeds() -> list[tuple[str, str]]:
     return out or FEEDS_PADRAO
 
 
-INTERVALO_MIN = int(os.getenv("NOTICIAS_INTERVALO_MIN", "15"))
-TETO_DIA = int(os.getenv("NOTICIAS_TETO_DIA", "8"))
+INTERVALO_MIN = int(os.getenv("NOTICIAS_INTERVALO_MIN", "10"))
+TETO_DIA = int(os.getenv("NOTICIAS_TETO_DIA", "0"))  # 0 = sem limite
 NOTA_MIN = float(os.getenv("NOTICIAS_NOTA_MIN", "6"))
 NOTA_URGENTE = float(os.getenv("NOTICIAS_NOTA_URGENTE", "9"))
-TOKENS_DIA = int(os.getenv("NOTICIAS_TOKENS_DIA", "600000"))
+TOKENS_DIA = int(os.getenv("NOTICIAS_TOKENS_DIA", "5000000"))  # só trava contra defeito em loop
 MODELO_TRIAGEM = os.getenv("NOTICIAS_MODELO_TRIAGEM", "claude-haiku-5-5")
 MODELO_TEXTO = os.getenv("NOTICIAS_MODELO_TEXTO", "claude-sonnet-5-5")
 HORA_SILENCIO = (int(os.getenv("NOTICIAS_SILENCIO_INICIO", "23")), int(os.getenv("NOTICIAS_SILENCIO_FIM", "7")))

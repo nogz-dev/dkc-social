@@ -828,7 +828,7 @@ async def ciclo_resultados() -> dict[str, Any]:
         if primeira_vez or datetime.now(timezone.utc) - inicio > timedelta(hours=6):
             await pool.execute("INSERT INTO resultados(fixture_id,status) VALUES($1,'ignorado') ON CONFLICT DO NOTHING", fid)
             continue
-        if feitos_hoje >= robo_resultados.TETO_DIA:
+        if robo_resultados.TETO_DIA and feitos_hoje >= robo_resultados.TETO_DIA:
             await pool.execute("INSERT INTO resultados(fixture_id,status) VALUES($1,'teto') ON CONFLICT DO NOTHING", fid)
             continue
         try:
@@ -1006,11 +1006,11 @@ async def ciclo_noticias(forcar: bool = False) -> dict[str, Any]:
             ne = _nota_efetiva(cnd["nota"], cnd["n_fontes"])
             if ne < robo_noticias.NOTA_MIN:
                 break
-            if feitos_hoje >= robo_noticias.TETO_DIA and ne < robo_noticias.NOTA_URGENTE:
+            if robo_noticias.TETO_DIA and feitos_hoje >= robo_noticias.TETO_DIA and ne < robo_noticias.NOTA_URGENTE:
                 break
             if silencio and ne < robo_noticias.NOTA_URGENTE:
                 continue
-            if por_ciclo >= 2:
+            if por_ciclo >= 6:
                 break
             try:
                 await escrever_post_noticia(cnd["id"], cnd["titulo"], ne)
