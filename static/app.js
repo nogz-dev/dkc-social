@@ -122,6 +122,7 @@ document.addEventListener("click", (e) => {
   else if (act === "rodada") gerarRodada();
   else if (act === "not-ligar") ligarNoticias();
   else if (act === "not-rodar") rodarNoticias();
+  else if (act === "res-ligar") ligarResultados();
   else if (act === "sair") sair();
 });
 
@@ -370,6 +371,9 @@ async function renderAjustes() {
     <div class="box"><h3>Publicação automática</h3><p>Só posts de <b>resultado final</b> dos principais jogos saem sem aprovação. Todo o resto passa pela fila.</p>
       <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
+    <div class="box"><h3>Robô de resultados</h3><p>Jogo dos principais acabou, o card de resultado sai sozinho no Instagram (é o único que não passa pela fila).</p>
+      <div id="ajRes"><p>Verificando…</p></div>
+      <button class="btn ghost" data-act="res-ligar" id="bRes">…</button></div>
     <div class="box"><h3>Robô de notícias</h3><p>Varre os portais, dá nota para cada notícia e escreve as mais fortes. Tudo cai na fila para você aprovar.</p>
       <div id="ajNot"><p>Verificando…</p></div>
       <button class="btn" data-act="not-rodar">Procurar notícias agora</button>
@@ -398,6 +402,15 @@ async function renderAjustes() {
     $("#bAuto").textContent = a.ligado ? "Desligar (resultado também passa pela fila)" : "Ligar";
   } catch {}
   try {
+    const r = await api("/api/robos/resultados"); S.res = r;
+    $("#ajRes").innerHTML = `
+      <div class="linha"><span>Status</span>${!r.tem_chave ? `<span class="nok">Falta API_FOOTBALL_KEY</span>` : r.ligado ? `<span class="ok">Ligado · a cada ${r.intervalo_min} min</span>` : `<span class="nok">Desligado</span>`}</div>
+      <div class="linha"><span>Hoje</span><span>${r.postados_hoje} de ${r.teto_dia} resultados</span></div>
+      <div class="linha"><span>Última conferida</span><span class="muted">${r.ultima ? quando(r.ultima) : "ainda não"}</span></div>
+      ${r.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(r.erro)}</span></div>` : ""}`;
+    $("#bRes").textContent = r.ligado ? "Desligar robô" : "Ligar robô";
+  } catch (err) { const el = $("#ajRes"); if (el) el.innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+  try {
     const n = await api("/api/robos/noticias"); S.not = n;
     const tk = n.uso_hoje.in + n.uso_hoje.out;
     $("#ajNot").innerHTML = `
@@ -420,6 +433,10 @@ async function renderAjustes() {
   } catch (err) { $("#ajPauta").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
 }
 
+async function ligarResultados() {
+  try { await api("/api/robos/resultados/ligar", { method: "POST", json: { ligado: !(S.res && S.res.ligado) } }); renderAjustes(); }
+  catch (err) { toast(err.message, true); }
+}
 async function ligarNoticias() {
   try { await api("/api/robos/noticias/ligar", { method: "POST", json: { ligado: !(S.not && S.not.ligado) } }); renderAjustes(); }
   catch (err) { toast(err.message, true); }

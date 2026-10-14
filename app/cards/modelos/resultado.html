@@ -8,6 +8,8 @@
 .lado b{font-weight:900;font-size:38px;text-transform:uppercase;letter-spacing:-.5px;line-height:1.05;max-width:340px}
 .gols{display:flex;align-items:center;gap:26px;font-weight:900;font-size:220px;letter-spacing:-8px;line-height:1;padding:0 10px}
 .gols i{font-style:normal;color:var(--cor);font-size:120px}
+.gols-wrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+.pen{font-weight:800;font-size:28px;letter-spacing:2px;text-transform:uppercase;color:var(--cor-ink);background:var(--cor);padding:8px 16px;border-radius:6px}
 .hora-jogo{display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 10px}
 .hora-jogo b{font-weight:900;font-size:120px;letter-spacing:-4px;line-height:1;color:var(--cor)}
 .hora-jogo span{font-weight:700;font-size:26px;letter-spacing:3px;color:var(--mute);text-transform:uppercase}
@@ -25,7 +27,7 @@
 <div class="placar">
   <div class="lado">{% if d.escudo_casa %}<img src="{{ d.escudo_casa }}" alt="">{% endif %}<b>{{ d.casa }}</b></div>
   {% if antes %}<div class="hora-jogo"><b>{{ d.hora }}</b><span>{{ d.hora_label or 'Brasília' }}</span></div>
-  {% else %}<div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>{% endif %}
+  {% else %}<div class="gols-wrap"><div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>{% if d.penaltis %}<div class="pen">{{ d.penaltis }}</div>{% endif %}</div>{% endif %}
   <div class="lado">{% if d.escudo_fora %}<img src="{{ d.escudo_fora }}" alt="">{% endif %}<b>{{ d.fora }}</b></div>
 </div>
 {% if antes and d.info %}<div class="info-jogo">{{ d.info }}</div>{% endif %}

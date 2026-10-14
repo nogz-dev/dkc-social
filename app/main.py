@@ -32,6 +32,7 @@ from pydantic import BaseModel
 from . import pauta, publora, webpush
 from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
+from .robos import resultados as robo_resultados
 from .cards import fotos
 from .cards.render import MODELOS, renderizador
 
@@ -148,6 +149,14 @@ CREATE TABLE IF NOT EXISTS noticias_itens (
   visto_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS noticias_itens_assunto ON noticias_itens(assunto_id);
+CREATE TABLE IF NOT EXISTS resultados (
+  fixture_id BIGINT PRIMARY KEY,
+  status TEXT NOT NULL,
+  post_id UUID,
+  erro TEXT,
+  tentativas INT NOT NULL DEFAULT 0,
+  em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS eventos (
   id BIGSERIAL PRIMARY KEY,
   post_id UUID,
@@ -201,7 +210,7 @@ async def lifespan(app: FastAPI):
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
     tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
-             asyncio.create_task(job_noticias())]
+             asyncio.create_task(job_noticias()), asyncio.create_task(job_resultados())]
     yield
     for t in tasks:
         t.cancel()
@@ -785,6 +794,98 @@ async def rodada_manual(body: RodadaIn, _=Depends(exige_login)):
         return await gerar_rodada(dia, body.forcar)
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(502, str(e)[:300])
+
+
+# --------------------------------------------------- robô: resultados ----
+
+_resultados_estado: dict[str, Any] = {"ultima": None, "erro": None}
+
+
+async def ciclo_resultados() -> dict[str, Any]:
+    agora = datetime.now(robo_rodada.TZ)
+    dias = [agora.date()]
+    if agora.hour < 4:  # jogo que acabou depois da meia-noite ainda é "de ontem"
+        dias.insert(0, agora.date() - timedelta(days=1))
+    jogos = []
+    for d in dias:
+        jogos += await robo_resultados.jogos(d)
+    _resultados_estado["ultima"] = _iso(datetime.now(timezone.utc))
+    acabados = [j for j in jogos if j["fixture"]["status"]["short"] in robo_resultados.FIM and robo_resultados.principal(j)]
+    primeira_vez = not await pool.fetchval("SELECT 1 FROM resultados LIMIT 1")
+    handle = await pool.fetchval("SELECT handle FROM perfis WHERE ativo ORDER BY id LIMIT 1") or "seutipster.app"
+    feitos_hoje = await pool.fetchval(
+        "SELECT count(*) FROM resultados WHERE status='postado' AND (em AT TIME ZONE 'America/Sao_Paulo')::date=$1", agora.date())
+    res = {"acabados": len(acabados), "postados": 0}
+    for j in acabados:
+        fid = j["fixture"]["id"]
+        ja = await pool.fetchrow("SELECT status, tentativas FROM resultados WHERE fixture_id=$1", fid)
+        if ja and (ja["status"] != "erro" or ja["tentativas"] >= 3):
+            continue
+        inicio = datetime.fromisoformat(j["fixture"]["date"].replace("Z", "+00:00"))
+        # estreia do robô (ou jogo antigo): só marca como visto, não posta atrasado
+        if primeira_vez or datetime.now(timezone.utc) - inicio > timedelta(hours=6):
+            await pool.execute("INSERT INTO resultados(fixture_id,status) VALUES($1,'ignorado') ON CONFLICT DO NOTHING", fid)
+            continue
+        if feitos_hoje >= robo_resultados.TETO_DIA:
+            await pool.execute("INSERT INTO resultados(fixture_id,status) VALUES($1,'teto') ON CONFLICT DO NOTHING", fid)
+            continue
+        try:
+            gs = await robo_resultados.gols(fid)
+            pedido = robo_resultados.montar(j, gs, handle)
+            pid, _av = await criar_post_de_slides(pedido, "robo")
+            await pool.execute(
+                "INSERT INTO resultados(fixture_id,status,post_id) VALUES($1,'postado',$2) "
+                "ON CONFLICT (fixture_id) DO UPDATE SET status='postado', post_id=EXCLUDED.post_id, erro=NULL, em=now()",
+                fid, pid)
+            feitos_hoje += 1
+            res["postados"] += 1
+        except Exception as e:
+            msg = e.detail if isinstance(e, HTTPException) else str(e)
+            log.exception("[RESULTADOS] fixture %s", fid)
+            await pool.execute(
+                "INSERT INTO resultados(fixture_id,status,erro,tentativas) VALUES($1,'erro',$2,1) "
+                "ON CONFLICT (fixture_id) DO UPDATE SET status='erro', erro=EXCLUDED.erro, tentativas=resultados.tentativas+1, em=now()",
+                fid, str(msg)[:300])
+    _resultados_estado["erro"] = None
+    return res
+
+
+async def job_resultados() -> None:
+    await asyncio.sleep(45)
+    while True:
+        try:
+            if robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0":
+                r = await ciclo_resultados()
+                if r.get("postados"):
+                    log.info("[RESULTADOS] %s", r)
+        except Exception as e:
+            _resultados_estado["erro"] = str(e)[:300]
+            log.warning("[RESULTADOS] %s", e)
+        await asyncio.sleep(robo_resultados.INTERVALO_MIN * 60)
+
+
+@app.get("/api/robos/resultados")
+async def resultados_status(_=Depends(exige_login)):
+    hoje = datetime.now(robo_rodada.TZ).date()
+    n = await pool.fetchval(
+        "SELECT count(*) FROM resultados WHERE status='postado' AND (em AT TIME ZONE 'America/Sao_Paulo')::date=$1", hoje)
+    return {"ligado": (await cfg_get("resultados_ligado")) != "0", "tem_chave": bool(robo_rodada.chave()),
+            "postados_hoje": n, "teto_dia": robo_resultados.TETO_DIA, "intervalo_min": robo_resultados.INTERVALO_MIN,
+            "ultima": _resultados_estado["ultima"], "erro": _resultados_estado["erro"]}
+
+
+@app.post("/api/robos/resultados/ligar")
+async def resultados_ligar(body: AutoIn, _=Depends(exige_login)):
+    await cfg_set("resultados_ligado", "1" if body.ligado else "0")
+    return {"ligado": body.ligado}
+
+
+@app.post("/api/robos/resultados/rodar")
+async def resultados_rodar(_=Depends(exige_login)):
+    try:
+        return await ciclo_resultados()
     except Exception as e:
         raise HTTPException(502, str(e)[:300])
 

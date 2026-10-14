@@ -78,3 +78,13 @@ imagem do feed). Teto de 8 por dia (`NOTICIAS_TETO_DIA`), silêncio das 23h às 
 salvo nota ≥ 9 (urgente), limite diário de tokens (`NOTICIAS_TOKENS_DIA`).
 Assunto recusado nunca volta. Precisa de `ANTHROPIC_API_KEY`. Liga/desliga e
 "procurar agora" em Ajustes.
+
+## Robô de resultados
+A cada 5 min (`RESULTADOS_INTERVALO_MIN`) confere os jogos do dia na API-Football.
+Jogo encerrado (FT/AET/PEN) dos principais vira card de resultado e é publicado
+sem aprovação (regra do servidor; chave "Resultados automáticos" em Ajustes).
+Principais = todo jogo de Libertadores, Sul-Americana, Copa do Brasil,
+Brasileirão e Champions; nas ligas europeias só jogo com clube grande
+(`GRANDES` em `app/robos/resultados.py`). Teto de 12 por dia
+(`RESULTADOS_TETO_DIA`). Na estreia e para jogos de mais de 6h atrás, só marca
+como visto (não posta atrasado). Detecta virada, goleada, empate e pênaltis.
