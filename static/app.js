@@ -72,7 +72,7 @@ function montarNav() {
   $("#navSide").innerHTML = Object.entries(VIEWS).map(([k, v]) => {
     let b = "";
     if (k === "fila" && pend) b = `<span class="badge">${pend}</span>`;
-    if (k === "recusados" && err) b = `<span class="badge" style="background:var(--red);color:#fff">${err}</span>`;
+    if (k === "recusados" && err) b = `<span class="badge" style="background:var(--red);color:#0A0A0A">${err}</span>`;
     return `<button data-view="${k}" class="${S.view === k ? "on" : ""}">${ico(v.icon)}${v.nav || v.t}${b}</button>`;
   }).join("");
   $("#navMob").innerHTML = Object.entries(VIEWS).filter(([, v]) => v.mob).map(([k, v]) =>

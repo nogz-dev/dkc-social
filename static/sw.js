@@ -1,6 +1,6 @@
 /* DKC Social — service worker: push + cache leve do app shell */
-const CACHE = "dkc-social-v1";
-const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest", "/static/icons/icon-192.png"];
+const CACHE = "dkc-social-v2";
+const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest", "/static/icons/icon-192.png", "/static/logo-dkc.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
