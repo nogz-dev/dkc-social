@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0A0C09">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DKC Social">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+<title>DKC Social</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<section id="login" class="login hidden">
+  <form class="login-box" id="loginForm">
+    <div class="brand big"><span class="mark"></span><b>DKC</b> Social</div>
+    <p class="muted">Aprovação de posts</p>
+    <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <button class="btn primary full" type="submit">Entrar</button>
+    <p class="err" id="loginErr"></p>
+  </form>
+</section>
+
+<!-- APP -->
+<div id="app" class="shell hidden">
+  <aside class="side">
+    <div class="brand"><span class="mark"></span><b>DKC</b> Social</div>
+    <nav class="nav" id="navSide"></nav>
+    <div class="side-sec">
+      <div class="side-title">Perfis</div>
+      <div id="perfisSide" class="perfis"></div>
+    </div>
+    <div class="side-foot">
+      <button class="btn primary full" data-act="novo"><svg><use href="#i-plus"/></svg>Novo post</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="top-l">
+        <div class="brand mob"><span class="mark"></span><b>DKC</b> Social</div>
+        <h1 id="viewTitle">Fila de aprovação</h1>
+        <span class="count" id="viewCount"></span>
+      </div>
+      <div class="top-r">
+        <div class="lote hidden" id="loteBar">
+          <span id="loteN">0 selecionados</span>
+          <button class="btn ghost sm" data-act="lote-limpar">Limpar</button>
+          <button class="btn primary sm" data-act="lote-aprovar"><svg><use href="#i-check"/></svg>Aprovar selecionados</button>
+        </div>
+        <button class="icon-btn" data-act="atualizar" title="Atualizar"><svg><use href="#i-refresh"/></svg></button>
+        <button class="icon-btn mob-only" data-act="novo" title="Novo post"><svg><use href="#i-plus"/></svg></button>
+      </div>
+    </header>
+
+    <section id="stats" class="stats"></section>
+    <section id="lista" class="grid"></section>
+    <section id="ajustes" class="ajustes hidden"></section>
+  </main>
+
+  <!-- painel de detalhe (drawer no PC, tela cheia no celular) -->
+  <aside class="detail" id="detail" aria-hidden="true">
+    <div class="detail-head">
+      <button class="icon-btn" data-act="fechar"><svg><use href="#i-x"/></svg></button>
+      <span id="dStatus" class="chip"></span>
+      <span class="grow"></span>
+      <span id="dPerfil" class="muted"></span>
+    </div>
+    <div class="detail-body">
+      <div class="preview" id="dPreview"></div>
+      <div class="field">
+        <label>Título interno</label>
+        <input id="dTitulo" type="text" maxlength="200">
+      </div>
+      <div class="field">
+        <label>Legenda <span class="muted" id="dCount"></span></label>
+        <div class="fold-wrap">
+          <textarea id="dLegenda" rows="9" maxlength="2200"></textarea>
+        </div>
+        <p class="hint">Os primeiros 125 caracteres aparecem antes do "mais": <span id="dFold" class="fold"></span></p>
+      </div>
+      <div class="field" id="dFonteWrap"><label>Fonte</label><div id="dFonte" class="muted"></div></div>
+      <div class="field" id="dErroWrap"><label>Erro</label><div id="dErro" class="err-box"></div></div>
+      <div class="field" id="dAgendaWrap">
+        <label>Agendar (opcional)</label>
+        <input id="dAgenda" type="datetime-local">
+      </div>
+    </div>
+    <div class="detail-foot" id="dActions"></div>
+  </aside>
+  <div class="scrim" id="scrim" data-act="fechar"></div>
+
+  <!-- abas do celular -->
+  <nav class="tabbar" id="navMob"></nav>
+</div>
+
+<!-- modal novo post -->
+<div class="modal hidden" id="modalNovo">
+  <form class="modal-box" id="formNovo">
+    <div class="modal-head"><h2>Novo post</h2><button type="button" class="icon-btn" data-act="novo-fechar"><svg><use href="#i-x"/></svg></button></div>
+    <label class="drop" id="drop">
+      <input type="file" id="nArq" accept="image/jpeg,image/png,image/webp,video/mp4" multiple hidden>
+      <svg><use href="#i-image"/></svg>
+      <span id="nArqTxt">Escolher imagem, carrossel (até 10) ou vídeo</span>
+    </label>
+    <div class="thumbs" id="nThumbs"></div>
+    <div class="field"><label>Título interno</label><input id="nTitulo" type="text" maxlength="200" placeholder="ex.: Carvajal no Getafe"></div>
+    <div class="row2">
+      <div class="field"><label>Linha</label>
+        <select id="nLinha">
+          <option value="noticia">Notícia do dia</option><option value="temporada">Temporada</option>
+          <option value="rodada">Rodada do dia</option><option value="resultado">Resultado</option>
+          <option value="jogador">Jogador</option><option value="manual" selected>Manual</option>
+        </select></div>
+      <div class="field"><label>Perfil</label><select id="nPerfil"></select></div>
+    </div>
+    <div class="field"><label>Legenda <span class="muted" id="nCount">0/2200</span></label><textarea id="nLegenda" rows="7" maxlength="2200"></textarea></div>
+    <button class="btn primary full" type="submit" id="nEnviar">Mandar para a fila</button>
+  </form>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13l2.5-7h11L20 13v5H4zM4 13h5l1 2h4l1-2h5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-7-6 16-3-6.5z"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4.5 3 3L15 13l4 4"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M5 19h4L19 9l-4-4L5 15zM13.5 6.5l4 4"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 010 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.5"/></symbol>
+</svg>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
