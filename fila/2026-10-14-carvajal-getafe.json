@@ -1,0 +1,18 @@
+{
+  "id": "2026-10-14-carvajal-getafe",
+  "perfil": "seutipster.app",
+  "linha": "noticia",
+  "titulo": "Carvajal no Getafe",
+  "fonte": "AS",
+  "legenda": "Carvajal saiu de 6 Champions no Real Madrid para ganhar 90% menos no Getafe.\n\nLivre desde junho, o lateral de 34 anos assinou até junho de 2027. Segundo o AS, vai receber menos de 1 milhão de euros por temporada, e o presidente Ángel Torres precisou dar uma garantia pessoal para a LaLiga liberar o registro.\n\nA estreia está prevista para segunda (19), contra o Rayo Vallecano.\n\nVocê faria o mesmo no lugar dele? 👇\n\n#Carvajal #Getafe #LaLiga #MercadoDaBola",
+  "slides": [
+    {"modelo": "noticia", "dados": {
+      "foto": "https://commons.wikimedia.org/wiki/Special:FilePath/UEFA_EURO_qualifiers_Sweden_vs_Spain_20191015_Dani_Carvajal_10.jpg?width=1600",
+      "foco": "center 20%",
+      "credito_foto": "Foto: Wikimedia Commons (CC BY-SA)",
+      "tag": "Mercado da bola", "tag2": "LaLiga",
+      "titulo": "Carvajal topa ganhar *90% menos* e fecha com o Getafe",
+      "fatos": [{"n": "13", "l": "temporadas no Real"}, {"n": "27", "l": "títulos pelo clube"}, {"n": "6", "l": "Champions League"}, {"n": "JUN/27", "l": "fim do contrato"}]
+    }}
+  ]
+}
