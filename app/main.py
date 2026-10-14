@@ -29,7 +29,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import publora, webpush
+from . import pauta, publora, webpush
+from .cards import fotos
+from .cards.render import MODELOS, renderizador
 
 log = logging.getLogger("dkc")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -109,6 +111,16 @@ CREATE TABLE IF NOT EXISTS push_subs (
   user_agent TEXT,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS pauta_importada (
+  path TEXT PRIMARY KEY,
+  blob_sha TEXT NOT NULL,
+  post_id UUID,
+  status TEXT NOT NULL,
+  erro TEXT,
+  tentativas INT NOT NULL DEFAULT 0,
+  em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE pauta_importada ADD COLUMN IF NOT EXISTS tentativas INT NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS eventos (
   id BIGSERIAL PRIMARY KEY,
   post_id UUID,
@@ -161,9 +173,14 @@ async def lifespan(app: FastAPI):
     await vapid()
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
-    task = asyncio.create_task(job_status_publora())
+    tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta())]
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
+    try:
+        await renderizador.fechar()
+    except Exception:
+        pass
     await pool.close()
 
 
@@ -461,6 +478,194 @@ class RoboPostIn(BaseModel):
     origem: str = "robo"
     sugerido_para: Optional[datetime] = None
     midias: list[MidiaB64]
+
+
+class SlideIn(BaseModel):
+    modelo: str
+    dados: dict = {}
+
+
+class RoboCardsIn(BaseModel):
+    perfil_id: Optional[int] = None
+    perfil_handle: Optional[str] = None
+    linha: str = "noticia"
+    titulo: str = ""
+    legenda: str
+    fonte: str = ""
+    origem: str = "robo"
+    sugerido_para: Optional[datetime] = None
+    slides: list[SlideIn]
+
+
+async def _perfil(perfil_id: Optional[int], handle: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    if perfil_id:
+        h = await pool.fetchval("SELECT handle FROM perfis WHERE id=$1", perfil_id)
+        return perfil_id, h
+    if handle:
+        r = await pool.fetchrow("SELECT id, handle FROM perfis WHERE lower(handle)=lower($1)", handle.lstrip("@"))
+        if r:
+            return r["id"], r["handle"]
+        return None, handle.lstrip("@")
+    r = await pool.fetchrow("SELECT id, handle FROM perfis WHERE ativo ORDER BY id LIMIT 1")
+    return (r["id"], r["handle"]) if r else (None, None)
+
+
+async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: str) -> tuple[list[tuple[str, bytes]], list[str]]:
+    if not slides:
+        raise HTTPException(400, "informe ao menos um slide")
+    if len(slides) > 10:
+        raise HTTPException(400, "máximo de 10 slides")
+    midias, avisos = [], []
+    for i, sl in enumerate(slides, 1):
+        if sl.get("modelo") not in MODELOS:
+            raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
+        try:
+            img, av = await renderizador.png(sl["modelo"], sl.get("dados") or {}, handle, fonte)
+        except fotos.FotoErro as e:
+            raise HTTPException(422, f"slide {i}: {e}")
+        midias.append(("image/jpeg", img))
+        avisos += [f"slide {i}: {a}" for a in av]
+    return midias, avisos
+
+
+async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
+    perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
+    midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""))
+    sug = body.get("sugerido_para")
+    if isinstance(sug, str) and sug:
+        try:
+            sug = datetime.fromisoformat(sug.replace("Z", "+00:00"))
+        except ValueError:
+            sug = None
+    pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
+                           legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
+                           midias=midias, sugerido_para=sug or None)
+    if avisos:
+        await evento(pid, "avisos", "; ".join(avisos))
+    return pid, avisos
+
+
+@app.post("/api/robo/cards")
+async def novo_robo_cards(body: RoboCardsIn, _=Depends(exige_robo)):
+    pid, avisos = await criar_post_de_slides(body.model_dump(mode="json"), body.origem or "robo")
+    return {"id": str(pid), "avisos": avisos}
+
+
+class PreviewIn(BaseModel):
+    perfil_handle: Optional[str] = None
+    fonte: str = ""
+    slide: SlideIn
+
+
+@app.post("/api/cards/preview")
+async def preview_card(body: PreviewIn, _=Depends(exige_login)):
+    if body.slide.modelo not in MODELOS:
+        raise HTTPException(400, "modelo inválido")
+    try:
+        img, _av = await renderizador.png(body.slide.modelo, body.slide.dados, body.perfil_handle, body.fonte)
+    except fotos.FotoErro as e:
+        raise HTTPException(422, str(e))
+    return Response(content=img, media_type="image/jpeg")
+
+
+# ------------------------------------------------------------- pauta ----
+
+_pauta_estado: dict[str, Any] = {"ultima": None, "erro": None}
+_pauta_lock = asyncio.Lock()
+
+
+async def importar_pauta() -> dict[str, Any]:
+    """Confere o branch de pauta e importa arquivos novos. Seguro para rodar em paralelo."""
+    async with _pauta_lock:
+        novos = erros = 0
+        async with httpx.AsyncClient(timeout=30) as c:
+            sha = await pauta.commit_atual(c)
+            _pauta_estado["ultima"] = _iso(datetime.now(timezone.utc))
+            if not sha:
+                _pauta_estado["erro"] = None
+                return {"novos": 0, "erros": 0, "branch": "inexistente"}
+            # erro passageiro (foto fora do ar etc.): tenta de novo a cada 10 min, até 3 vezes
+            retentar = await pool.fetchval(
+                "SELECT count(*) FROM pauta_importada WHERE status='erro' AND tentativas<3 AND em<now()-interval '10 minutes'"
+            )
+            if sha == await cfg_get("pauta_sha") and not retentar:
+                _pauta_estado["erro"] = None
+                return {"novos": 0, "erros": 0, "sha": sha[:7]}
+            for arq in await pauta.arquivos(c, sha):
+                ja = await pool.fetchrow("SELECT blob_sha, status FROM pauta_importada WHERE path=$1", arq["path"])
+                # importa uma vez; só tenta de novo se deu erro e o arquivo foi corrigido
+                if ja and ja["status"] == "ok":
+                    continue
+                if ja and ja["blob_sha"] == arq["sha"]:
+                    pode = await pool.fetchval(
+                        "SELECT tentativas<3 AND em<now()-interval '10 minutes' FROM pauta_importada WHERE path=$1", arq["path"])
+                    if not pode:
+                        continue
+                try:
+                    body = json.loads(await pauta.baixar(c, sha, arq["path"]))
+                    if body.get("midias") and not body.get("slides"):
+                        midias = []
+                        for m in body["midias"][:10]:
+                            dados = await pauta.baixar(c, sha, m)
+                            ext = m.rsplit(".", 1)[-1].lower()
+                            mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "mp4": "video/mp4"}.get(ext, "")
+                            midias.append((mime, dados))
+                        perfil_id, _h = await _perfil(None, body.get("perfil"))
+                        pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "manual"), titulo=body.get("titulo", ""),
+                                               legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem="claude", midias=midias)
+                    else:
+                        pid, _av = await criar_post_de_slides(body, "claude")
+                    await pool.execute(
+                        "INSERT INTO pauta_importada(path,blob_sha,post_id,status,erro) VALUES($1,$2,$3,'ok',NULL) "
+                        "ON CONFLICT (path) DO UPDATE SET blob_sha=EXCLUDED.blob_sha, post_id=EXCLUDED.post_id, status='ok', erro=NULL, em=now()",
+                        arq["path"], arq["sha"], pid,
+                    )
+                    novos += 1
+                except Exception as e:
+                    msg = e.detail if isinstance(e, HTTPException) else str(e)
+                    log.exception("[PAUTA] falha em %s", arq["path"])
+                    await pool.execute(
+                        "INSERT INTO pauta_importada(path,blob_sha,status,erro,tentativas) VALUES($1,$2,'erro',$3,1) "
+                        "ON CONFLICT (path) DO UPDATE SET tentativas=CASE WHEN pauta_importada.blob_sha=EXCLUDED.blob_sha "
+                        "THEN pauta_importada.tentativas+1 ELSE 1 END, blob_sha=EXCLUDED.blob_sha, status='erro', erro=EXCLUDED.erro, em=now()",
+                        arq["path"], arq["sha"], str(msg)[:500],
+                    )
+                    await enviar_push({"title": "⚠️ Pauta com erro", "body": f"{arq['path']}: {str(msg)[:100]}", "url": "/"})
+                    erros += 1
+            await cfg_set("pauta_sha", sha)
+            _pauta_estado["erro"] = None
+            return {"novos": novos, "erros": erros, "sha": sha[:7]}
+
+
+async def job_pauta() -> None:
+    await asyncio.sleep(15)
+    while True:
+        try:
+            r = await importar_pauta()
+            if r.get("novos") or r.get("erros"):
+                log.info("[PAUTA] %s", r)
+        except Exception as e:
+            _pauta_estado["erro"] = str(e)[:300]
+            log.warning("[PAUTA] %s", e)
+        await asyncio.sleep(pauta.INTERVALO)
+
+
+@app.post("/api/pauta/buscar")
+async def pauta_buscar(_=Depends(exige_login)):
+    try:
+        return await importar_pauta()
+    except Exception as e:
+        raise HTTPException(502, f"não consegui ler a pauta no GitHub: {e}")
+
+
+@app.get("/api/pauta/status")
+async def pauta_status(_=Depends(exige_login)):
+    rows = await pool.fetch("SELECT path,status,erro,em FROM pauta_importada ORDER BY em DESC LIMIT 10")
+    return {
+        "repo": pauta.REPO, "branch": pauta.BRANCH, "intervalo_s": pauta.INTERVALO,
+        "ultima_checagem": _pauta_estado["ultima"], "erro": _pauta_estado["erro"],
+        "importados": [{"path": r["path"], "status": r["status"], "erro": r["erro"], "em": _iso(r["em"])} for r in rows],
+    }
 
 
 @app.post("/api/robo/posts")

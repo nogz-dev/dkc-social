@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block estilo %}
+.foto{height:1350px;background-position:{{ d.foco or 'center 30%' }}}
+.sombra{height:1350px;background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.62) 45%,var(--bg) 92%)}
+.placar{position:absolute;left:40px;right:40px;top:250px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;z-index:5}
+.lado{display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center}
+.lado img{width:200px;height:200px;object-fit:contain;filter:drop-shadow(0 10px 30px rgba(0,0,0,.5))}
+.lado b{font-weight:900;font-size:38px;text-transform:uppercase;letter-spacing:-.5px;line-height:1.05;max-width:340px}
+.gols{display:flex;align-items:center;gap:26px;font-weight:900;font-size:220px;letter-spacing:-8px;line-height:1;padding:0 10px}
+.gols i{font-style:normal;color:var(--cor);font-size:120px}
+.autores{position:absolute;left:64px;right:64px;top:760px;display:grid;grid-template-columns:1fr 1fr;gap:40px;z-index:5;font-weight:500;font-size:24px;color:var(--ink);opacity:.9;line-height:1.55}
+.autores .d{text-align:right}
+.bloco{position:absolute;left:64px;right:64px;bottom:150px;z-index:5}
+.bloco h1{max-height:250px}
+{% endblock %}
+{% block corpo %}
+{% if d.foto %}<div class="foto" style="background-image:url('{{ d.foto }}')"></div>{% endif %}<div class="sombra"></div>
+{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+<div class="tags"><div class="pill">{{ d.tag or 'FIM DE JOGO' }}</div>{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
+<div class="placar">
+  <div class="lado">{% if d.escudo_casa %}<img src="{{ d.escudo_casa }}" alt="">{% endif %}<b>{{ d.casa }}</b></div>
+  <div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>
+  <div class="lado">{% if d.escudo_fora %}<img src="{{ d.escudo_fora }}" alt="">{% endif %}<b>{{ d.fora }}</b></div>
+</div>
+{% if d.autores_casa or d.autores_fora %}
+<div class="autores"><div>{% for a in d.autores_casa or [] %}{{ a }}<br>{% endfor %}</div><div class="d">{% for a in d.autores_fora or [] %}{{ a }}<br>{% endfor %}</div></div>
+{% endif %}
+{% if d.titulo %}<div class="bloco"><h1 class="fit" data-max="{{ d.tamanho or 84 }}" data-min="48">{{ d.titulo|destaque }}</h1></div>{% endif %}
+{% endblock %}

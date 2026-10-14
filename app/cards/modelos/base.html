@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+{{ fontes|safe }}
+:root{--cor:{{ marca.cor }};--cor-ink:{{ marca.cor_ink }};--bg:{{ marca.bg }};--ink:{{ marca.ink }};--mute:{{ marca.mute }}}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1350px;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:CardInter,sans-serif;position:relative;-webkit-font-smoothing:antialiased}
+em{font-style:normal;color:var(--cor)}
+.foto{position:absolute;left:0;right:0;top:0;background-size:cover;background-repeat:no-repeat}
+.sombra{position:absolute;left:0;right:0;top:0}
+.tags{position:absolute;left:64px;top:64px;display:flex;gap:14px;z-index:5}
+.pill{background:var(--cor);color:var(--cor-ink);font-weight:900;font-size:25px;letter-spacing:2px;padding:12px 20px;border-radius:6px;text-transform:uppercase;line-height:1}
+.pill.o{background:rgba(0,0,0,.45);color:var(--cor);box-shadow:inset 0 0 0 3px var(--cor)}
+.fit{overflow:hidden;font-weight:900;text-transform:uppercase;letter-spacing:-2px;line-height:.98;padding-bottom:4px}
+.rodape{position:absolute;left:64px;right:64px;bottom:54px;display:flex;justify-content:space-between;align-items:flex-end;z-index:5}
+.rodape img{height:48px;display:block}
+.rodape .info{text-align:right;font-weight:500;font-size:19px;color:var(--mute);line-height:1.45}
+.credito{position:absolute;right:24px;top:30px;font-size:13px;color:rgba(255,255,255,.55);font-weight:500;z-index:4}
+.fatos{display:flex;border-top:2px solid rgba(255,255,255,.14);padding-top:26px;margin-top:30px}
+.fatos .f{flex:1;min-width:0}
+.fatos b{display:block;font-weight:900;font-size:56px;color:var(--cor);letter-spacing:-1px;line-height:1.05}
+.fatos span{display:block;font-weight:500;font-size:20px;color:var(--mute);text-transform:uppercase;letter-spacing:1px;line-height:1.25;margin-top:6px}
+.arrasta{position:absolute;right:64px;bottom:130px;font-weight:800;font-size:22px;letter-spacing:2px;color:var(--cor);z-index:5}
+{% block estilo %}{% endblock %}
+</style></head>
+<body>
+{% block corpo %}{% endblock %}
+<div class="rodape">
+  {% if marca.logo %}<img src="{{ marca.logo }}" alt="">{% else %}<b style="font-size:34px">{{ marca.nome }}</b>{% endif %}
+  <div class="info">@{{ marca.handle }}{% if fonte %}<br>Fonte: {{ fonte }}{% endif %}</div>
+</div>
+<script>
+(async function(){
+  const imgs=[...document.images].filter(i=>!i.complete).map(i=>new Promise(r=>{i.onload=i.onerror=r}));
+  await Promise.all(imgs);
+  try{await document.fonts.ready}catch(e){}
+  document.querySelectorAll('.fit').forEach(el=>{
+    let s=+el.dataset.max||100; const min=+el.dataset.min||48;
+    const lim=parseFloat(getComputedStyle(el).maxHeight)||9999;
+    el.style.fontSize=s+'px';
+    while((el.scrollHeight>lim+6||el.scrollWidth>el.clientWidth+2)&&s>min){s-=2;el.style.fontSize=s+'px'}
+  });
+  window.__pronto=true;
+})();
+</script>
+</body></html>

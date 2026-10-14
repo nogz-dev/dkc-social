@@ -40,3 +40,21 @@ POST /api/robo/posts   (header x-robo-key)
   "midias": [{"mime": "image/png", "base64": "..."}]
 }
 ```
+
+## Cards (fatia 2)
+Modelos 1080×1350 em `app/cards/modelos` (Jinja2 + Chromium headless):
+`noticia` · `jogador` · `rodada` · `resultado`. Fotos e escudos são baixados no
+servidor (anti-SSRF) e embutidos. `*palavra*` no título vira destaque na cor da marca.
+Marcas por perfil em `app/cards/render.py` (`MARCAS`).
+
+- `POST /api/robo/cards` (header `x-robo-key`): `{perfil_handle, linha, titulo, legenda, fonte, slides:[{modelo, dados}]}`
+- `POST /api/cards/preview` (logado): devolve o JPEG de um slide
+
+## Pauta do Claude
+Branch `pauta` deste repositório, pasta `fila/`. Cada `<id>.json` (mesmo formato
+de `/api/robo/cards`, com `perfil` e `slides`) vira post na fila. O servidor
+confere a cada 2 min (30 s com `GITHUB_TOKEN`). Erros passageiros são
+re-tentados até 3 vezes. Variáveis opcionais: `GITHUB_TOKEN`, `PAUTA_REPO`,
+`PAUTA_BRANCH`, `PAUTA_DIR`, `PAUTA_INTERVALO`.
+
+Pré-visualizar localmente: `CARD_ALLOW_FILE=1 python -m tools.preview pauta.json saida/`

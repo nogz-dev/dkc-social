@@ -9,6 +9,7 @@ const VIEWS = {
   ajustes:    { t: "Ajustes",           status: null,                    icon: "i-gear",  mob: "Ajustes" },
 };
 const STATUS_TXT = { pendente: "Aguardando", publicando: "Enviando", agendado: "Agendado", publicado: "Publicado", recusado: "Recusado", erro: "Erro" };
+const ORIGEM_TXT = { claude: "Claude", robo: "Robô", manual: "Manual" };
 const LINHA_TXT = { noticia: "Notícia", temporada: "Temporada", rodada: "Rodada", resultado: "Resultado", jogador: "Jogador", manual: "Manual" };
 
 const S = { token: null, view: "fila", posts: [], sel: new Set(), atual: null, slide: 0, perfis: [], resumo: {} };
@@ -115,6 +116,7 @@ document.addEventListener("click", (e) => {
   else if (act === "push-ativar") ativarPush();
   else if (act === "push-teste") testarPush();
   else if (act === "sincronizar") sincronizar();
+  else if (act === "pauta") buscarPauta();
   else if (act === "sair") sair();
 });
 
@@ -173,7 +175,7 @@ function renderLista() {
       ${thumbHTML(p)}
       ${fila ? `<span class="selbox" data-act="sel" data-id="${p.id}">${ico("i-check")}</span>` : ""}
       <div class="body">
-        <div class="meta"><span class="chip ${p.status}">${STATUS_TXT[p.status]}</span><span class="chip">${LINHA_TXT[p.linha] || p.linha}</span><span class="time">${quandoTxt}</span></div>
+        <div class="meta"><span class="chip ${p.status}">${STATUS_TXT[p.status]}</span><span class="chip">${LINHA_TXT[p.linha] || p.linha}</span>${p.origem && p.origem !== "manual" ? `<span class="chip">${esc(ORIGEM_TXT[p.origem] || p.origem)}</span>` : ""}<span class="time">${quandoTxt}</span></div>
         <h3>${esc(p.titulo || "Sem título")}</h3>
         <p>${esc(p.legenda)}</p>
         ${p.erro ? `<p style="color:var(--red)">${esc(p.erro)}</p>` : ""}
@@ -356,6 +358,9 @@ async function renderAjustes() {
     <div class="box"><h3>Perfis do Instagram</h3><p>Puxa as contas conectadas no Publora.</p>
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
+    <div class="box"><h3>Pauta do Claude</h3><p>Posts que o Claude prepara no chat chegam por aqui sozinhos.</p>
+      <div id="ajPauta"><p>Verificando…</p></div>
+      <button class="btn" data-act="pauta">Buscar pauta agora</button></div>
     <div class="box"><h3>Saúde do sistema</h3><div id="ajSaude"><p>Verificando…</p></div></div>
     <div class="box"><h3>Sessão</h3><p>Sair deste aparelho.</p><button class="btn danger" data-act="sair">Sair</button></div>`;
   try {
@@ -366,6 +371,22 @@ async function renderAjustes() {
       <div class="linha"><span>Robôs</span>${s.robo_configurado ? `<span class="ok">Chave configurada</span>` : `<span class="muted">Sem chave (fatia 3)</span>`}</div>
       <div class="linha"><span>Endereço público</span><span class="muted">${esc(s.base_publica)}</span></div>`;
   } catch (err) { $("#ajSaude").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+  try {
+    const p = await api("/api/pauta/status");
+    const ult = p.importados.slice(0, 5).map((i) => `<div class="linha"><span>${esc(i.path.replace(/^fila\//, ""))}</span>${i.status === "ok" ? `<span class="ok">na fila</span>` : `<span class="nok" title="${esc(i.erro || "")}">erro</span>`}</div>`).join("");
+    $("#ajPauta").innerHTML = `
+      <div class="linha"><span>Última checagem</span><span class="muted">${p.ultima_checagem ? quando(p.ultima_checagem) : "ainda não"}</span></div>
+      <div class="linha"><span>Frequência</span><span class="muted">a cada ${Math.round(p.intervalo_s / 60 * 10) / 10} min</span></div>
+      ${p.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(p.erro)}</span></div>` : ""}${ult}`;
+  } catch (err) { $("#ajPauta").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+}
+
+async function buscarPauta() {
+  try {
+    const r = await api("/api/pauta/buscar", { method: "POST" });
+    toast(r.novos ? `${r.novos} post(s) novo(s) na fila` : r.erros ? `${r.erros} com erro` : "Nada novo na pauta", !!r.erros && !r.novos);
+    renderAjustes(); carregarResumo().then(montarNav);
+  } catch (err) { toast(err.message, true); }
 }
 
 async function sincronizar() {
