@@ -16,6 +16,7 @@ const S = { token: null, view: "fila", posts: [], sel: new Set(), atual: null, s
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const ico = (id) => `<svg><use href="#${id}"/></svg>`;
+const dominio = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
 const isDesk = () => matchMedia("(min-width:861px)").matches;
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -178,6 +179,7 @@ function renderLista() {
       <div class="body">
         <div class="meta"><span class="chip ${p.status}">${STATUS_TXT[p.status]}</span><span class="chip">${LINHA_TXT[p.linha] || p.linha}</span>${p.origem && p.origem !== "manual" ? `<span class="chip">${esc(ORIGEM_TXT[p.origem] || p.origem)}</span>` : ""}<span class="time">${quandoTxt}</span></div>
         <h3>${esc(p.titulo || "Sem título")}</h3>
+        ${(p.fonte_urls || []).length ? `<a class="link-fonte sm" href="${esc(p.fonte_urls[0])}" target="_blank" rel="noopener noreferrer" data-ext="1">${ico("i-ext")}Ver fonte · ${esc(dominio(p.fonte_urls[0]))}</a>` : ""}
         <p>${esc(p.legenda)}</p>
         ${p.erro ? `<p style="color:var(--red)">${esc(p.erro)}</p>` : ""}
       </div>${acts}</article>`;
@@ -187,7 +189,7 @@ function renderLista() {
 }
 
 $("#lista").addEventListener("click", (e) => {
-  if (e.target.closest("[data-act]")) return;
+  if (e.target.closest("[data-act]") || e.target.closest("[data-ext]")) return;
   const c = e.target.closest("[data-open]");
   if (c) abrirDetalhe(c.dataset.open);
 });
@@ -247,7 +249,10 @@ async function abrirDetalhe(id) {
   $("#dPerfil").textContent = p.perfil ? "@" + p.perfil : "sem perfil";
   $("#dTitulo").value = p.titulo; $("#dTitulo").readOnly = !editavel;
   $("#dLegenda").value = p.legenda; $("#dLegenda").readOnly = !editavel;
-  $("#dFonteWrap").classList.toggle("hidden", !p.fonte); $("#dFonte").textContent = p.fonte;
+  const links = p.fonte_urls || [];
+  $("#dFonteWrap").classList.toggle("hidden", !p.fonte && !links.length);
+  $("#dFonte").innerHTML = (p.fonte ? `<div>${esc(p.fonte)}</div>` : "") +
+    links.map((u) => `<a class="link-fonte" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ico("i-ext")}${esc(dominio(u))}</a>`).join("");
   $("#dErroWrap").classList.toggle("hidden", !p.erro); $("#dErro").textContent = p.erro || "";
   $("#dAgendaWrap").classList.toggle("hidden", !editavel); $("#dAgenda").value = "";
   if (p.sugerido_para && editavel) {

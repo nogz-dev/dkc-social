@@ -13,6 +13,7 @@ Formato do arquivo:
   "legenda": "...",
   "fonte": "AS",
   "sugerido_para": "2026-10-14T18:00:00Z",      (opcional)
+  "fonte_urls": ["https://..."],                 (links da notícia, só aparecem no app)
   "slides": [{"modelo": "noticia", "dados": {...}}],   (renderizados no servidor)
   "midias": ["fila/arquivos/x.jpg"]                    (ou arquivos prontos no branch)
 }

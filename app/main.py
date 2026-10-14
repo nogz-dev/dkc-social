@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS posts (
   decidido_em TIMESTAMPTZ,
   publicado_em TIMESTAMPTZ
 );
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS fonte_urls JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS posts_status_idx ON posts(status, criado_em DESC);
 CREATE TABLE IF NOT EXISTS midias (
   id UUID PRIMARY KEY,
@@ -283,6 +284,7 @@ async def post_json(row: asyncpg.Record, base: str) -> dict[str, Any]:
         "titulo": row["titulo"],
         "legenda": row["legenda"],
         "fonte": row["fonte"],
+        "fonte_urls": json.loads(row["fonte_urls"]) if isinstance(row["fonte_urls"], str) else (row["fonte_urls"] or []),
         "origem": row["origem"],
         "status": row["status"],
         "erro": row["erro"],
@@ -312,6 +314,7 @@ async def perfil_padrao() -> Optional[int]:
 async def criar_post(
     *, perfil_id: Optional[int], linha: str, titulo: str, legenda: str, fonte: str,
     origem: str, midias: list[tuple[str, bytes]], sugerido_para: Optional[datetime] = None,
+    fonte_urls: Optional[list] = None,
 ) -> uuid.UUID:
     if linha not in LINHAS:
         linha = "manual"
@@ -330,13 +333,14 @@ async def criar_post(
             raise HTTPException(400, f"arquivo acima de {lim} MB")
     if len(legenda) > 2200:
         raise HTTPException(400, "legenda acima de 2.200 caracteres (limite do Instagram)")
+    links = [u for u in (fonte_urls or []) if isinstance(u, str) and u.startswith(("https://", "http://"))][:5]
     pid = uuid.uuid4()
     perfil_id = perfil_id or await perfil_padrao()
     async with pool.acquire() as c, c.transaction():
         await c.execute(
-            "INSERT INTO posts(id,perfil_id,linha,titulo,legenda,fonte,origem,sugerido_para) "
-            "VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
-            pid, perfil_id, linha, titulo[:200], legenda, fonte[:300], origem[:40], sugerido_para,
+            "INSERT INTO posts(id,perfil_id,linha,titulo,legenda,fonte,origem,sugerido_para,fonte_urls) "
+            "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)",
+            pid, perfil_id, linha, titulo[:200], legenda, fonte[:300], origem[:40], sugerido_para, json.dumps(links),
         )
         for i, (mime, dados) in enumerate(midias):
             await c.execute(
@@ -505,6 +509,7 @@ class RoboPostIn(BaseModel):
     fonte: str = ""
     origem: str = "robo"
     sugerido_para: Optional[datetime] = None
+    fonte_urls: list[str] = []
     midias: list[MidiaB64]
 
 
@@ -522,6 +527,7 @@ class RoboCardsIn(BaseModel):
     fonte: str = ""
     origem: str = "robo"
     sugerido_para: Optional[datetime] = None
+    fonte_urls: list[str] = []
     slides: list[SlideIn]
 
 
@@ -556,6 +562,11 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     return midias, avisos
 
 
+def _links(body: dict) -> list:
+    v = body.get("fonte_urls") or body.get("fonte_url") or []
+    return [v] if isinstance(v, str) else list(v)
+
+
 async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
     perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
     midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""))
@@ -567,7 +578,7 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
             sug = None
     pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
                            legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
-                           midias=midias, sugerido_para=sug or None)
+                           midias=midias, sugerido_para=sug or None, fonte_urls=_links(body))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos
@@ -640,7 +651,8 @@ async def importar_pauta() -> dict[str, Any]:
                             midias.append((mime, dados))
                         perfil_id, _h = await _perfil(None, body.get("perfil"))
                         pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "manual"), titulo=body.get("titulo", ""),
-                                               legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem="claude", midias=midias)
+                                               legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem="claude", midias=midias,
+                                               fonte_urls=_links(body))
                     else:
                         pid, _av = await criar_post_de_slides(body, "claude")
                     await pool.execute(
@@ -710,7 +722,8 @@ async def novo_robo(body: RoboPostIn, _=Depends(exige_robo)):
         except Exception:
             raise HTTPException(400, "mídia em base64 inválida")
     pid = await criar_post(perfil_id=perfil_id, linha=body.linha, titulo=body.titulo, legenda=body.legenda,
-                           fonte=body.fonte, origem=body.origem, midias=midias, sugerido_para=body.sugerido_para)
+                           fonte=body.fonte, origem=body.origem, midias=midias, sugerido_para=body.sugerido_para,
+                           fonte_urls=body.fonte_urls)
     return {"id": str(pid)}
 
 
