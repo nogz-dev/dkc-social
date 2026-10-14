@@ -272,6 +272,7 @@ PRIORIDADES DA CASA (o dono do perfil pediu, valem mais que o resto):
 - Clubes brasileiros da Série A e da Série B (contratação, saída, técnico, lesão, bastidor, diretoria, finanças, polêmica): nota mínima 6, mesmo que só um portal tenha dado.
 - Regulamentação e mercado de apostas no Brasil (bets, Secretaria de Prêmios e Apostas, Ministério da Fazenda, CPI, patrocínio de bets, proibições, impostos, licenças): nota mínima 7.
 - Clubes da Premier League, LaLiga e dos grandes da Champions (Real, Barça, Atlético, City, Liverpool, Arsenal, Chelsea, United, Tottenham, Newcastle, Bayern, Dortmund, PSG, Inter, Milan, Juventus, Napoli...): transferência, negociação avançada, rumor de veículo conhecido, técnico, lesão, crise, bastidor bombástico: nota mínima 6; bomba de clube grande: 8 a 10.
+- "Here we go" ou informação atribuída a Fabrizio Romano sobre clube grande: nota mínima 8 (é transferência praticamente fechada).
 - O objetivo do perfil é dar a notícia ANTES dos outros canais. Rumor forte de veículo conhecido entra (vai como "segundo X"); só descarte fofoca sem fonte ou de site obscuro.
 - Uma notícia relevante dada por um só portal vale tanto quanto uma repetida em vários. Não rebaixe por exclusividade.
 
@@ -347,6 +348,9 @@ def reforco(texto: str, nota: float, tipo: str | None) -> float:
     t = f" {texto.lower()} "
     if any(k in t for k in _ESTRELAS):
         nota = max(nota, 7.0)
+    # "Here we go" do Fabrizio Romano = transferência fechada, é o furo que todo mundo vai repetir
+    if "here we go" in t or "fabrizio romano" in t or "romano" in t and any(k in t for k in ("transfer", "deal", "contrat")):
+        nota = max(nota, 8.0)
     if any(k in t for k in _APOSTAS) and any(k in t for k in ("bet", "aposta", "loteria", "igaming")):
         nota = max(nota, 7.0)
     if tipo != "resultado" and nota >= 3 and any(k in t for k in _CLUBES_BR):
