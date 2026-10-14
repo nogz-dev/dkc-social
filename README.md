@@ -66,3 +66,15 @@ Champions, Premier, LaLiga, Serie A, Bundesliga, Ligue 1) e manda um carrossel
 para a fila com sugestão de publicar às 9h: capa + card de destaque para ligas
 com até 2 jogos + lista por liga. Precisa de `API_FOOTBALL_KEY`.
 Gerar manualmente: Ajustes → "Gerar a rodada de hoje agora" (`POST /api/robos/rodada`).
+
+## Robô de notícias
+A cada 15 min (`NOTICIAS_INTERVALO_MIN`) lê os feeds dos portais (lista em
+`app/robos/noticias.py`, ou `NOTICIAS_FEEDS="Nome|url,..."`), descarta o que já
+viu, uma IA rápida (`NOTICIAS_MODELO_TRIAGEM`) dá nota 0–10 e agrupa a mesma
+notícia de vários portais (cada portal a mais soma +0,5, até +1,5). Assuntos com
+nota ≥ 7 viram post (IA de texto `NOTICIAS_MODELO_TEXTO`, regras da skill de
+Instagram + checagem final da legenda), com foto (Wikimedia → imagem da matéria →
+imagem do feed). Teto de 8 por dia (`NOTICIAS_TETO_DIA`), silêncio das 23h às 7h
+salvo nota ≥ 9 (urgente), limite diário de tokens (`NOTICIAS_TOKENS_DIA`).
+Assunto recusado nunca volta. Precisa de `ANTHROPIC_API_KEY`. Liga/desliga e
+"procurar agora" em Ajustes.

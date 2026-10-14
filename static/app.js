@@ -120,6 +120,8 @@ document.addEventListener("click", (e) => {
   else if (act === "pauta") buscarPauta();
   else if (act === "auto") alternarAuto();
   else if (act === "rodada") gerarRodada();
+  else if (act === "not-ligar") ligarNoticias();
+  else if (act === "not-rodar") rodarNoticias();
   else if (act === "sair") sair();
 });
 
@@ -368,6 +370,10 @@ async function renderAjustes() {
     <div class="box"><h3>Publicação automática</h3><p>Só posts de <b>resultado final</b> dos principais jogos saem sem aprovação. Todo o resto passa pela fila.</p>
       <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
+    <div class="box"><h3>Robô de notícias</h3><p>Varre os portais, dá nota para cada notícia e escreve as mais fortes. Tudo cai na fila para você aprovar.</p>
+      <div id="ajNot"><p>Verificando…</p></div>
+      <button class="btn" data-act="not-rodar">Procurar notícias agora</button>
+      <button class="btn ghost" data-act="not-ligar" id="bNot">…</button></div>
     <div class="box"><h3>Robô da Rodada do dia</h3><p>Todo dia às 7h monta o carrossel com os jogos das ligas prioritárias e manda para a fila, com sugestão de publicar às 9h.</p>
       <div class="linha"><span>API-Football</span><span id="ajApiF" class="muted">…</span></div>
       <button class="btn" data-act="rodada">Gerar a rodada de hoje agora</button></div>
@@ -392,6 +398,19 @@ async function renderAjustes() {
     $("#bAuto").textContent = a.ligado ? "Desligar (resultado também passa pela fila)" : "Ligar";
   } catch {}
   try {
+    const n = await api("/api/robos/noticias"); S.not = n;
+    const tk = n.uso_hoje.in + n.uso_hoje.out;
+    $("#ajNot").innerHTML = `
+      <div class="linha"><span>Status</span>${!n.tem_chave ? `<span class="nok">Falta ANTHROPIC_API_KEY</span>` : n.ligado ? `<span class="ok">Ligado · a cada ${n.intervalo_min} min</span>` : `<span class="nok">Desligado</span>`}</div>
+      <div class="linha"><span>Hoje</span><span>${n.postados_hoje} de ${n.teto_dia} notícias</span></div>
+      <div class="linha"><span>Portais respondendo</span><span class="${n.feeds_total && n.feeds_ok < n.feeds_total / 2 ? "nok" : "muted"}">${n.feeds_total ? `${n.feeds_ok} de ${n.feeds_total}` : "ainda não rodou"}</span></div>
+      <div class="linha"><span>Uso da IA hoje</span><span class="muted">${Math.round(tk / 1000)} mil de ${Math.round(n.limite_tokens / 1000)} mil tokens</span></div>
+      <div class="linha"><span>Última varredura</span><span class="muted">${n.ultima ? quando(n.ultima) : "ainda não"}</span></div>
+      ${n.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(n.erro)}</span></div>` : ""}
+      ${n.assuntos_24h.length ? `<div class="side-title" style="padding:10px 0 0">Assuntos das últimas 24h</div>` + n.assuntos_24h.map((a) => `<div class="linha"><span>${esc(a.titulo)}</span><span class="${a.nota >= 7 ? "ok" : "muted"}" title="${a.n_fontes} fonte(s) · ${esc(a.status)}">${(+a.nota).toFixed(0)}</span></div>`).join("") : ""}`;
+    $("#bNot").textContent = n.ligado ? "Desligar robô" : "Ligar robô";
+  } catch (err) { const el = $("#ajNot"); if (el) el.innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+  try {
     const p = await api("/api/pauta/status");
     const ult = p.importados.slice(0, 5).map((i) => `<div class="linha"><span>${esc(i.path.replace(/^fila\//, ""))}</span>${i.status === "ok" ? `<span class="ok">na fila</span>` : `<span class="nok" title="${esc(i.erro || "")}">erro</span>`}</div>`).join("");
     $("#ajPauta").innerHTML = `
@@ -399,6 +418,19 @@ async function renderAjustes() {
       <div class="linha"><span>Frequência</span><span class="muted">a cada ${Math.round(p.intervalo_s / 60 * 10) / 10} min</span></div>
       ${p.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(p.erro)}</span></div>` : ""}${ult}`;
   } catch (err) { $("#ajPauta").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+}
+
+async function ligarNoticias() {
+  try { await api("/api/robos/noticias/ligar", { method: "POST", json: { ligado: !(S.not && S.not.ligado) } }); renderAjustes(); }
+  catch (err) { toast(err.message, true); }
+}
+async function rodarNoticias() {
+  try {
+    toast("Procurando notícias… pode levar 1 a 2 minutos");
+    const r = await api("/api/robos/noticias/rodar", { method: "POST" });
+    toast(r.ok ? `${r.novas} manchetes novas · ${r.posts} post(s) na fila` : r.motivo, !r.ok);
+    renderAjustes(); carregarResumo().then(montarNav);
+  } catch (err) { toast(err.message, true); }
 }
 
 async function gerarRodada() {

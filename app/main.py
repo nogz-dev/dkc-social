@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import pauta, publora, webpush
+from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
 from .cards import fotos
 from .cards.render import MODELOS, renderizador
@@ -123,6 +124,30 @@ CREATE TABLE IF NOT EXISTS pauta_importada (
   em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE pauta_importada ADD COLUMN IF NOT EXISTS tentativas INT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS assuntos (
+  id SERIAL PRIMARY KEY,
+  titulo TEXT NOT NULL,
+  tipo TEXT,
+  nota REAL NOT NULL DEFAULT 0,
+  motivo TEXT,
+  status TEXT NOT NULL DEFAULT 'novo',
+  post_id UUID,
+  erro TEXT,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  postado_em TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS assuntos_idx ON assuntos(status, criado_em DESC);
+CREATE TABLE IF NOT EXISTS noticias_itens (
+  url_hash TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  fonte TEXT,
+  titulo TEXT,
+  resumo TEXT,
+  imagem TEXT,
+  assunto_id INT REFERENCES assuntos(id),
+  visto_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS noticias_itens_assunto ON noticias_itens(assunto_id);
 CREATE TABLE IF NOT EXISTS eventos (
   id BIGSERIAL PRIMARY KEY,
   post_id UUID,
@@ -175,7 +200,8 @@ async def lifespan(app: FastAPI):
     await vapid()
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
-    tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada())]
+    tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
+             asyncio.create_task(job_noticias())]
     yield
     for t in tasks:
         t.cancel()
@@ -315,7 +341,7 @@ async def perfil_padrao() -> Optional[int]:
 async def criar_post(
     *, perfil_id: Optional[int], linha: str, titulo: str, legenda: str, fonte: str,
     origem: str, midias: list[tuple[str, bytes]], sugerido_para: Optional[datetime] = None,
-    fonte_urls: Optional[list] = None,
+    fonte_urls: Optional[list] = None, aviso: Optional[str] = None,
 ) -> uuid.UUID:
     if linha not in LINHAS:
         linha = "manual"
@@ -358,7 +384,7 @@ async def criar_post(
             "url": f"/?post={pid}", "tag": f"post-{pid}",
         }))
     else:
-        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80]))
+        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80], aviso))
     return pid
 
 
@@ -406,11 +432,11 @@ async def enviar_push(data: dict) -> dict[str, int]:
     return {"enviadas": ok, "falhas": falha, "removidas": removidas}
 
 
-async def avisar_novo_post(pid: uuid.UUID, titulo: str) -> None:
+async def avisar_novo_post(pid: uuid.UUID, titulo: str, aviso: Optional[str] = None) -> None:
     pend = await pool.fetchval("SELECT count(*) FROM posts WHERE status='pendente'")
     extra = f" · {pend} na fila" if pend > 1 else ""
     await enviar_push({
-        "title": "📲 Novo post para aprovar",
+        "title": aviso or "📲 Novo post para aprovar",
         "body": (titulo or "Post novo") + extra,
         "url": f"/?post={pid}",
         "tag": f"post-{pid}",
@@ -579,7 +605,7 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
             sug = None
     pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
                            legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
-                           midias=midias, sugerido_para=sug or None, fonte_urls=_links(body))
+                           midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos
@@ -763,6 +789,260 @@ async def rodada_manual(body: RodadaIn, _=Depends(exige_login)):
         raise HTTPException(502, str(e)[:300])
 
 
+# ----------------------------------------------------- robô: notícias ----
+
+_noticias_estado: dict[str, Any] = {"ultima": None, "erro": None, "feeds": {}, "ultimo_resultado": None}
+_noticias_lock = asyncio.Lock()
+
+
+async def _uso_hoje() -> dict:
+    hoje = datetime.now(robo_rodada.TZ).date().isoformat()
+    raw = await cfg_get(f"ia_uso_{hoje}")
+    return json.loads(raw) if raw else {"chamadas": 0, "in": 0, "out": 0}
+
+
+async def _somar_uso(u: dict) -> None:
+    hoje = datetime.now(robo_rodada.TZ).date().isoformat()
+    atual = await _uso_hoje()
+    atual = {"chamadas": atual["chamadas"] + 1, "in": atual["in"] + u.get("in", 0), "out": atual["out"] + u.get("out", 0)}
+    await cfg_set(f"ia_uso_{hoje}", json.dumps(atual))
+
+
+async def _ia(modelo: str, sistema: str, usuario: str, max_tokens: int = 2000):
+    uso = await _uso_hoje()
+    if uso["in"] + uso["out"] >= robo_noticias.TOKENS_DIA:
+        raise robo_noticias.LimiteIA("limite diário de uso da IA atingido")
+    dados, u = await robo_noticias.claude(modelo, sistema, usuario, max_tokens)
+    await _somar_uso(u)
+    return dados
+
+
+async def noticias_ligado() -> bool:
+    return (await cfg_get("noticias_ligado")) != "0" and bool(robo_noticias.chave_ia())
+
+
+def _nota_efetiva(nota: float, n_fontes: int) -> float:
+    return nota + min(1.5, 0.5 * max(0, n_fontes - 1))
+
+
+async def ciclo_noticias(forcar: bool = False) -> dict[str, Any]:
+    async with _noticias_lock:
+        if not forcar and not await noticias_ligado():
+            return {"ok": False, "motivo": "robô desligado ou sem ANTHROPIC_API_KEY"}
+        res: dict[str, Any] = {"novas": 0, "assuntos": 0, "posts": 0}
+        itens, saude = await robo_noticias.ler_feeds()
+        _noticias_estado["feeds"] = saude
+        _noticias_estado["ultima"] = _iso(datetime.now(timezone.utc))
+
+        # 1) só o que nunca foi visto
+        hashes = {robo_noticias.hash_url(i["url"]): i for i in itens}
+        vistos = {r["url_hash"] for r in await pool.fetch(
+            "SELECT url_hash FROM noticias_itens WHERE url_hash = ANY($1::text[])", list(hashes))}
+        novos = [dict(i, hash=h) for h, i in hashes.items() if h not in vistos]
+        novos.sort(key=lambda i: i.get("publicado") or "", reverse=True)
+        primeira_vez = not await pool.fetchval("SELECT 1 FROM noticias_itens LIMIT 1")
+        triar, ignorar = novos[:60], novos[60:]
+        if primeira_vez:  # na estreia não despeja 6h de atraso: avalia só as mais recentes
+            triar, ignorar = novos[:25], novos[25:]
+        for i in ignorar:
+            await pool.execute("INSERT INTO noticias_itens(url_hash,url,fonte,titulo) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+                               i["hash"], i["url"], i["fonte"], i["titulo"])
+        res["novas"] = len(triar)
+
+        # 2) triagem (nota + agrupamento)
+        if triar:
+            recentes = [dict(r) for r in await pool.fetch(
+                "SELECT id, titulo FROM assuntos WHERE criado_em > now() - interval '48 hours' ORDER BY id DESC LIMIT 80")]
+            ids_recentes = {r["id"] for r in recentes}
+            for ini in range(0, len(triar), 30):
+                lote = triar[ini:ini + 30]
+                for k, it in enumerate(lote):
+                    it["id"] = k
+                saida = await _ia(robo_noticias.MODELO_TRIAGEM, robo_noticias.SISTEMA_TRIAGEM,
+                                  robo_noticias.prompt_triagem(lote, recentes), 4000)
+                por_item = {o.get("item"): o for o in (saida if isinstance(saida, list) else []) if isinstance(o, dict)}
+                novos_no_lote: dict[str, int] = {}
+                for it in lote:
+                    o = por_item.get(it["id"]) or {}
+                    aid = o.get("assunto_existente")
+                    if aid not in ids_recentes:
+                        aid = None
+                    titulo_a = (o.get("assunto") or it["titulo"])[:120]
+                    nota = float(o.get("nota") or 0)
+                    if aid is None and titulo_a in novos_no_lote:
+                        aid = novos_no_lote[titulo_a]
+                    if aid is None:
+                        aid = await pool.fetchval(
+                            "INSERT INTO assuntos(titulo,tipo,nota,motivo) VALUES($1,$2,$3,$4) RETURNING id",
+                            titulo_a, o.get("tipo"), nota, (o.get("motivo") or "")[:200])
+                        novos_no_lote[titulo_a] = aid
+                        recentes.append({"id": aid, "titulo": titulo_a})
+                        ids_recentes.add(aid)
+                        res["assuntos"] += 1
+                    else:
+                        await pool.execute("UPDATE assuntos SET nota=GREATEST(nota,$2) WHERE id=$1", aid, nota)
+                    await pool.execute(
+                        "INSERT INTO noticias_itens(url_hash,url,fonte,titulo,resumo,imagem,assunto_id) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
+                        it["hash"], it["url"], it["fonte"], it["titulo"], it["resumo"], it.get("imagem"), aid)
+
+        # 3) escreve os melhores (respeitando teto do dia e horário de silêncio)
+        agora = datetime.now(robo_rodada.TZ)
+        ini_s, fim_s = robo_noticias.HORA_SILENCIO
+        silencio = agora.hour >= ini_s or agora.hour < fim_s
+        feitos_hoje = await pool.fetchval(
+            "SELECT count(*) FROM assuntos WHERE postado_em IS NOT NULL AND (postado_em AT TIME ZONE 'America/Sao_Paulo')::date = $1",
+            agora.date())
+        cands = await pool.fetch("""
+            SELECT a.id, a.titulo, a.nota, a.tipo, count(DISTINCT n.fonte) AS n_fontes
+            FROM assuntos a JOIN noticias_itens n ON n.assunto_id=a.id
+            WHERE a.status='novo' AND a.criado_em > now() - interval '12 hours'
+            GROUP BY a.id ORDER BY a.nota DESC, a.id DESC LIMIT 20""")
+        cands = sorted(cands, key=lambda c: -_nota_efetiva(c["nota"], c["n_fontes"]))
+        por_ciclo = 0
+        for cnd in cands:
+            ne = _nota_efetiva(cnd["nota"], cnd["n_fontes"])
+            if ne < robo_noticias.NOTA_MIN:
+                break
+            if feitos_hoje >= robo_noticias.TETO_DIA and ne < robo_noticias.NOTA_URGENTE:
+                break
+            if silencio and ne < robo_noticias.NOTA_URGENTE:
+                continue
+            if por_ciclo >= 2:
+                break
+            try:
+                await escrever_post_noticia(cnd["id"], cnd["titulo"], ne)
+                feitos_hoje += 1
+                por_ciclo += 1
+                res["posts"] += 1
+            except robo_noticias.LimiteIA:
+                raise
+            except Exception as e:
+                log.exception("[NOTICIAS] falha ao escrever assunto %s", cnd["id"])
+                await pool.execute("UPDATE assuntos SET status='erro', erro=$2 WHERE id=$1", cnd["id"], str(e)[:300])
+        _noticias_estado["ultimo_resultado"] = res
+        _noticias_estado["erro"] = None
+        return {"ok": True, **res}
+
+
+async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -> uuid.UUID:
+    itens = [dict(r) for r in await pool.fetch(
+        "SELECT url,fonte,titulo,resumo,imagem FROM noticias_itens WHERE assunto_id=$1 ORDER BY visto_em", aid)]
+    # até 3 fontes, veículos diferentes
+    fontes, vistos = [], set()
+    for it in itens:
+        if it["fonte"] not in vistos:
+            fontes.append(it)
+            vistos.add(it["fonte"])
+        if len(fontes) == 3:
+            break
+    materias = await asyncio.gather(*(robo_noticias.ler_materia(f["url"]) for f in fontes))
+    for f, m in zip(fontes, materias):
+        f["texto"] = m.get("texto", "")
+        f["og_image"] = m.get("og_image", "")
+    post = await _ia(robo_noticias.MODELO_TEXTO, robo_noticias.SISTEMA_REDACAO,
+                     robo_noticias.prompt_redacao(titulo_assunto, fontes), 2500)
+    if not isinstance(post, dict) or not post.get("legenda") or not post.get("titulo_card"):
+        raise ValueError("a IA não devolveu o post completo")
+    legenda = robo_noticias.corrigir_legenda(post["legenda"])
+    problemas = robo_noticias.checar_legenda(legenda)
+
+    # foto: Wikimedia (livre) → imagem da matéria → imagem do feed
+    foto, credito = None, None
+    wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
+    if wm:
+        foto, credito = wm
+    else:
+        for f in fontes:
+            if f.get("og_image") or f.get("imagem"):
+                foto = f.get("og_image") or f.get("imagem")
+                credito = f"Foto: reprodução {f['fonte']}"
+                break
+    urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
+    dados = {
+        "foto": foto, "credito_foto": credito, "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
+        "tag2": post.get("tag2"), "titulo": post["titulo_card"][:90],
+        "linha_fina": post.get("linha_fina"), "fatos": (post.get("fatos") or [])[:4],
+    }
+    if not foto:
+        dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+    pedido = {
+        "perfil": None, "linha": "noticia", "titulo": titulo_assunto[:200], "legenda": legenda,
+        "fonte": post.get("fonte_nome") or fontes[0]["fonte"],
+        "fonte_urls": [f["url"] for f in fontes],
+        "slides": [{"modelo": "noticia", "dados": dados}],
+        "aviso": ("🚨 URGENTE · " if urgente else "📰 ") + "notícia para aprovar",
+    }
+    try:
+        pid, _av = await criar_post_de_slides(pedido, "robo")
+    except HTTPException as e:
+        if foto and e.status_code == 422:  # foto não baixou: sai sem foto em vez de perder a notícia
+            dados["foto"] = None
+            dados["credito_foto"] = None
+            dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+            pid, _av = await criar_post_de_slides(pedido, "robo")
+        else:
+            raise
+    await pool.execute("UPDATE assuntos SET status='postado', post_id=$2, postado_em=now() WHERE id=$1", aid, pid)
+    if problemas:
+        await evento(pid, "checagem_legenda", "; ".join(problemas))
+    return pid
+
+
+async def job_noticias() -> None:
+    await asyncio.sleep(60)
+    while True:
+        try:
+            if await noticias_ligado():
+                r = await ciclo_noticias()
+                if r.get("posts"):
+                    log.info("[NOTICIAS] %s", r)
+        except robo_noticias.LimiteIA as e:
+            _noticias_estado["erro"] = str(e)
+            hoje = datetime.now(robo_rodada.TZ).date().isoformat()
+            if not await cfg_get(f"ia_limite_avisado_{hoje}"):
+                await cfg_set(f"ia_limite_avisado_{hoje}", "1")
+                await enviar_push({"title": "⚠️ Robô de notícias pausado", "body": "Limite diário de uso da IA atingido. Volta amanhã.", "url": "/"})
+        except Exception as e:
+            _noticias_estado["erro"] = str(e)[:300]
+            log.warning("[NOTICIAS] %s", e)
+        await asyncio.sleep(robo_noticias.INTERVALO_MIN * 60)
+
+
+@app.get("/api/robos/noticias")
+async def noticias_status(_=Depends(exige_login)):
+    hoje = datetime.now(robo_rodada.TZ).date()
+    postados = await pool.fetchval(
+        "SELECT count(*) FROM assuntos WHERE postado_em IS NOT NULL AND (postado_em AT TIME ZONE 'America/Sao_Paulo')::date = $1", hoje)
+    top = await pool.fetch("""SELECT a.titulo, a.nota, a.status, count(DISTINCT n.fonte) n_fontes FROM assuntos a
+        LEFT JOIN noticias_itens n ON n.assunto_id=a.id WHERE a.criado_em > now() - interval '24 hours'
+        GROUP BY a.id ORDER BY a.nota DESC LIMIT 8""")
+    feeds = _noticias_estado["feeds"]
+    return {
+        "ligado": (await cfg_get("noticias_ligado")) != "0", "tem_chave": bool(robo_noticias.chave_ia()),
+        "intervalo_min": robo_noticias.INTERVALO_MIN, "teto_dia": robo_noticias.TETO_DIA, "postados_hoje": postados,
+        "ultima": _noticias_estado["ultima"], "erro": _noticias_estado["erro"], "uso_hoje": await _uso_hoje(),
+        "limite_tokens": robo_noticias.TOKENS_DIA,
+        "feeds_ok": sum(1 for v in feeds.values() if not v), "feeds_total": len(feeds),
+        "feeds_com_erro": [u for u, v in feeds.items() if v][:20],
+        "assuntos_24h": [dict(r) for r in top],
+    }
+
+
+@app.post("/api/robos/noticias/ligar")
+async def noticias_ligar(body: AutoIn, _=Depends(exige_login)):
+    await cfg_set("noticias_ligado", "1" if body.ligado else "0")
+    return {"ligado": body.ligado}
+
+
+@app.post("/api/robos/noticias/rodar")
+async def noticias_rodar(_=Depends(exige_login)):
+    try:
+        return await ciclo_noticias(forcar=True)
+    except Exception as e:
+        raise HTTPException(502, str(e)[:300])
+
+
 @app.post("/api/robo/posts")
 async def novo_robo(body: RoboPostIn, _=Depends(exige_robo)):
     perfil_id = body.perfil_id
@@ -856,6 +1136,7 @@ async def recusar(pid: uuid.UUID, body: RecusarIn, _=Depends(exige_login)):
     if not row:
         raise HTTPException(409, "esse post já foi decidido")
     await evento(pid, "recusado", body.motivo)
+    await pool.execute("UPDATE assuntos SET status='recusado' WHERE post_id=$1", pid)
     return {"ok": True}
 
 
