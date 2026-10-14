@@ -43,6 +43,13 @@ FEEDS_PADRAO: list[tuple[str, str]] = [
     ("Marca", "https://e00-marca.uecdn.es/rss/futbol/primera-division.xml"),
     ("Mundo Deportivo", "https://www.mundodeportivo.com/rss/futbol"),
     ("Gazzetta", "https://www.gazzetta.it/rss/calcio.xml"),
+    # mercado europeu, bastidores e rumores de transferência
+    ("Football365", "https://www.football365.com/feed"),
+    ("TEAMtalk", "https://www.teamtalk.com/feed"),
+    ("CaughtOffside", "https://www.caughtoffside.com/feed/"),
+    ("Football Italia", "https://football-italia.net/feed/"),
+    ("Fichajes", "https://www.fichajes.net/rss"),
+    ("ESPN FC", "https://www.espn.com/espn/rss/soccer/transfers"),
     # mercado de apostas / regulamentação
     ("BNL Data", "https://bnldata.com.br/feed/"),
     ("iGaming Brazil", "https://igamingbrazil.com/feed/"),
@@ -264,6 +271,8 @@ PRIORIDADES DA CASA (o dono do perfil pediu, valem mais que o resto):
 - Qualquer notícia relevante sobre Neymar ou Cristiano Ronaldo: nota mínima 7.
 - Clubes brasileiros da Série A e da Série B (contratação, saída, técnico, lesão, bastidor, diretoria, finanças, polêmica): nota mínima 6, mesmo que só um portal tenha dado.
 - Regulamentação e mercado de apostas no Brasil (bets, Secretaria de Prêmios e Apostas, Ministério da Fazenda, CPI, patrocínio de bets, proibições, impostos, licenças): nota mínima 7.
+- Clubes da Premier League, LaLiga e dos grandes da Champions (Real, Barça, Atlético, City, Liverpool, Arsenal, Chelsea, United, Tottenham, Newcastle, Bayern, Dortmund, PSG, Inter, Milan, Juventus, Napoli...): transferência, negociação avançada, rumor de veículo conhecido, técnico, lesão, crise, bastidor bombástico: nota mínima 6; bomba de clube grande: 8 a 10.
+- O objetivo do perfil é dar a notícia ANTES dos outros canais. Rumor forte de veículo conhecido entra (vai como "segundo X"); só descarte fofoca sem fonte ou de site obscuro.
 - Uma notícia relevante dada por um só portal vale tanto quanto uma repetida em vários. Não rebaixe por exclusividade.
 
 Critérios de nota:
@@ -284,7 +293,7 @@ Nunca invente número, data, valor, declaração ou nome. Se a fonte trata como 
 
 Devolva SOMENTE um objeto JSON:
 {
- "tag": rótulo curto em caixa normal (ex.: "Mercado da bola", "Urgente", "Lesão", "Demitido", "Polêmica", "Recorde"),
+ "tag": rótulo curto em caixa normal (ex.: "Mercado da bola", "Urgente", "Lesão", "Demitido", "Polêmica", "Recorde", "Bastidores"; se for rumor/negociação não confirmada use "Rumor"),
  "tag2": competição ou liga (ex.: "Brasileirão", "LaLiga", "Premier") ou null,
  "titulo_card": manchete do card, até 70 caracteres, forte e factual; marque 1 a 3 palavras-chave entre *asteriscos* para destaque,
  "linha_fina": complemento opcional até 80 caracteres ou null (use só se não houver fatos numéricos),
@@ -320,6 +329,16 @@ _CLUBES_BR = (
     "série a", "série b", "serie b",
 )
 _ESTRELAS = ("neymar", "cristiano ronaldo", "cr7")
+_CLUBES_EU = (
+    "real madrid", "barcelona", "barça", "atlético de madrid", "atletico madrid", "manchester city", "man city",
+    "liverpool", "arsenal", "chelsea", "manchester united", "man united", "man utd", "tottenham", "newcastle",
+    "aston villa", "west ham", "everton", "brighton", "bayern", "dortmund", "leverkusen", "psg", "paris saint",
+    "inter de milão", "inter milan", "milan", "juventus", "napoli", "roma", "sevilla", "betis", "villarreal",
+    "athletic bilbao", "real sociedad", "valencia", "girona", "premier league", "laliga", "la liga", "champions",
+)
+_MERCADO = ("transfer", "contrat", "assina", "acerto", "negocia", "proposta", "oferta", "rumor", "sign", "deal",
+            "bid", "here we go", "fichaje", "demit", "sacked", "técnico", "treinador", "manager", "lesão", "injur",
+            "crise", "polêmica", "bastidor")
 _APOSTAS = ("bets", " bet ", "apostas", "casas de aposta", "secretaria de prêmios", "prêmios e apostas", "spa/mf",
             "regulamentação", "regulamentacao", "jogo responsável", "cpi das bets", "loterias", "igaming")
 
@@ -331,6 +350,8 @@ def reforco(texto: str, nota: float, tipo: str | None) -> float:
     if any(k in t for k in _APOSTAS) and any(k in t for k in ("bet", "aposta", "loteria", "igaming")):
         nota = max(nota, 7.0)
     if tipo != "resultado" and nota >= 3 and any(k in t for k in _CLUBES_BR):
+        nota = max(nota, 6.0)
+    if tipo != "resultado" and nota >= 3 and any(k in t for k in _CLUBES_EU) and any(k in t for k in _MERCADO):
         nota = max(nota, 6.0)
     return nota
 
