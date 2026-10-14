@@ -60,6 +60,14 @@ def _fontes() -> str:
         for peso, arq in ((900, "Black"), (800, "ExtraBold"), (700, "Bold"), (600, "SemiBold"), (500, "Medium"), (400, "Regular")):
             b64 = base64.b64encode((AQUI / "fonts" / f"Inter-{arq}.otf").read_bytes()).decode()
             partes.append(f"@font-face{{font-family:CardInter;font-weight:{peso};src:url(data:font/otf;base64,{b64})}}")
+        LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+        EXT = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+        for peso, estilo in ((900, "italic"), (800, "italic"), (700, "normal"), (600, "normal"), (500, "normal")):
+            for sub, rng in (("latin", LATIN), ("latin-ext", EXT)):
+                arq = AQUI / "fonts" / f"barlow-condensed-{sub}-{peso}-{estilo}.woff2"
+                b64 = base64.b64encode(arq.read_bytes()).decode()
+                partes.append(f"@font-face{{font-family:Barlow;font-weight:{peso};font-style:{estilo};"
+                              f"src:url(data:font/woff2;base64,{b64}) format('woff2');unicode-range:{rng}}}")
         _fontes_css = "\n".join(partes)
     return _fontes_css
 
@@ -77,6 +85,36 @@ def marca_de(handle: str | None) -> dict[str, str]:
 
 
 # --------------------------------------------------------------- imagens --
+def cor_dominante(data_uri: str | None) -> str | None:
+    """Cor principal de um escudo (ignora branco, preto e cinza)."""
+    if not data_uri or "," not in data_uri:
+        return None
+    try:
+        im = Image.open(io.BytesIO(base64.b64decode(data_uri.split(",", 1)[1]))).convert("RGBA")
+        im.thumbnail((64, 64))
+        cont: dict[tuple, int] = {}
+        for r, g, b, a in im.getdata():
+            if a < 200:
+                continue
+            mx, mn = max(r, g, b), min(r, g, b)
+            if mx - mn < 40 or mx < 50:  # cinza, branco ou preto
+                continue
+            k = (r // 24 * 24, g // 24 * 24, b // 24 * 24)
+            cont[k] = cont.get(k, 0) + 1
+        if not cont:
+            return None
+        r, g, b = max(cont, key=cont.get)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        return None
+
+
+def _escura(hex_: str) -> bool:
+    h = hex_.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return (0.299 * r + 0.587 * g + 0.114 * b) < 150
+
+
 async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
     """Troca URLs por data URIs. Foto principal é obrigatória quando informada;
     escudos e logos que falharem só somem do card. Devolve avisos."""
@@ -101,6 +139,15 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
         tarefas.append(opcional(j, "escudo_casa"))
         tarefas.append(opcional(j, "escudo_fora"))
     await asyncio.gather(*tarefas)
+    # cor da faixa: a do escudo do protagonista (vencedor/casa), senão a marca
+    if not d.get("cor_faixa"):
+        for k in ("escudo_destaque", "escudo_fora" if d.get("lado_destaque") == "fora" else "escudo_casa", "escudo"):
+            c = cor_dominante(d.get(k)) if d.get(k) else None
+            if c:
+                d["cor_faixa"] = c
+                break
+    if d.get("cor_faixa"):
+        d["faixa_escura"] = _escura(d["cor_faixa"])
     if not d.get("foto"):
         avisos.append("card sem foto")
     return avisos

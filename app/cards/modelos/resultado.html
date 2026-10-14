@@ -1,38 +1,42 @@
 {% extends "base.html" %}
+{% set antes = d.gols_casa is none %}
 {% block estilo %}
-.foto{height:1350px;background-position:{{ d.foco or 'center 30%' }}}
-.sombra{height:1350px;background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.62) 45%,var(--bg) 92%)}
-.placar{position:absolute;left:40px;right:40px;top:250px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;z-index:5}
-.lado{display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center}
-.lado img{width:200px;height:200px;object-fit:contain;filter:drop-shadow(0 10px 30px rgba(0,0,0,.5))}
-.lado b{font-weight:900;font-size:38px;text-transform:uppercase;letter-spacing:-.5px;line-height:1.05;max-width:340px}
-.gols{display:flex;align-items:center;gap:26px;font-weight:900;font-size:220px;letter-spacing:-8px;line-height:1;padding:0 10px}
-.gols i{font-style:normal;color:var(--cor);font-size:120px}
-.gols-wrap{display:flex;flex-direction:column;align-items:center;gap:8px}
-.pen{font-weight:800;font-size:28px;letter-spacing:2px;text-transform:uppercase;color:var(--cor-ink);background:var(--cor);padding:8px 16px;border-radius:6px}
-.hora-jogo{display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 10px}
-.hora-jogo b{font-weight:900;font-size:120px;letter-spacing:-4px;line-height:1;color:var(--cor)}
-.hora-jogo span{font-weight:700;font-size:26px;letter-spacing:3px;color:var(--mute);text-transform:uppercase}
-.info-jogo{position:absolute;left:64px;right:64px;top:720px;text-align:center;z-index:5;font-weight:600;font-size:28px;color:var(--ink);opacity:.9;text-transform:uppercase;letter-spacing:2px;line-height:1.5}
-.autores{position:absolute;left:64px;right:64px;top:760px;display:grid;grid-template-columns:1fr 1fr;gap:40px;z-index:5;font-weight:500;font-size:24px;color:var(--ink);opacity:.9;line-height:1.55}
-.autores .d{text-align:right}
-.bloco{position:absolute;left:64px;right:64px;bottom:150px;z-index:5}
-.bloco h1{max-height:250px}
+.sombra{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 38%,rgba(0,0,0,.75) 62%,#000 78%)}
+.faixa{position:absolute;left:0;right:0;bottom:118px;height:390px;z-index:3;background:var(--faixa);color:var(--faixa-ink);
+  clip-path:polygon(0 70px,100% 0,100% 100%,0 100%)}
+.faixa:before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,rgba(0,0,0,.28),rgba(0,0,0,0) 45%,rgba(255,255,255,.08))}
+.base{position:absolute;left:0;right:0;bottom:0;height:120px;background:#000;z-index:3}
+.placar{position:absolute;left:40px;right:40px;bottom:250px;z-index:5;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;color:var(--faixa-ink)}
+.time{display:flex;align-items:center;gap:18px;min-width:0}
+.time.fora{flex-direction:row-reverse;text-align:right}
+.time img{width:112px;height:112px;object-fit:contain;flex:none;filter:drop-shadow(0 6px 14px rgba(0,0,0,.35))}
+.time b{font-weight:800;font-style:italic;font-size:46px;line-height:.92;text-transform:uppercase;letter-spacing:-.5px}
+.gols{display:flex;align-items:center;gap:6px;font-weight:900;font-style:italic;font-size:210px;line-height:.8;letter-spacing:-6px}
+.gols .sep{width:56px;height:20px;background:currentColor;opacity:.85;transform:skewX(-14deg);margin:0 20px}
+.hora{font-weight:900;font-style:italic;font-size:150px;line-height:.8;letter-spacing:-4px}
+.pen{position:absolute;left:50%;bottom:208px;transform:translateX(-50%) rotate(-2deg);z-index:6;background:#000;color:#fff;font-weight:800;font-style:italic;font-size:30px;padding:6px 18px 4px}
+.autores{position:absolute;left:56px;right:56px;bottom:140px;z-index:5;display:grid;grid-template-columns:1fr 1fr;gap:30px;
+  font-weight:600;font-size:25px;line-height:1.3;color:var(--faixa-ink);opacity:.92}
+.autores .f{text-align:right}
+.info-jogo{position:absolute;left:56px;right:56px;bottom:150px;z-index:5;text-align:center;font-weight:600;font-size:30px;color:var(--faixa-ink);opacity:.9}
+.manchete{position:absolute;left:52px;right:52px;bottom:520px;z-index:5;max-height:330px}
 {% endblock %}
 {% block corpo %}
-{% if d.foto %}<div class="foto" style="background-image:url('{{ d.foto }}')"></div>{% endif %}<div class="sombra"></div>
+<div class="foto {{ '' if d.foto else 'sem' }}" {% if d.foto %}style="background-image:url('{{ d.foto }}')"{% endif %}></div>
+<div class="sombra"></div>
 {% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
-{% set antes = d.gols_casa is none %}
-<div class="tags"><div class="pill">{{ d.tag or ('HOJE' if antes else 'FIM DE JOGO') }}</div>{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
+<div class="fita"><span>{{ d.tag or ('Hoje' if antes else 'Fim de jogo') }}</span>{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+{% if d.titulo %}<h1 class="manchete fit" data-max="{{ d.tamanho or 150 }}" data-min="70">{{ d.titulo|destaque }}</h1>{% endif %}
+<div class="faixa"></div><div class="base"></div>
 <div class="placar">
-  <div class="lado">{% if d.escudo_casa %}<img src="{{ d.escudo_casa }}" alt="">{% endif %}<b>{{ d.casa }}</b></div>
-  {% if antes %}<div class="hora-jogo"><b>{{ d.hora }}</b><span>{{ d.hora_label or 'Brasília' }}</span></div>
-  {% else %}<div class="gols-wrap"><div class="gols">{{ d.gols_casa }}<i>×</i>{{ d.gols_fora }}</div>{% if d.penaltis %}<div class="pen">{{ d.penaltis }}</div>{% endif %}</div>{% endif %}
-  <div class="lado">{% if d.escudo_fora %}<img src="{{ d.escudo_fora }}" alt="">{% endif %}<b>{{ d.fora }}</b></div>
+  <div class="time casa">{% if d.escudo_casa %}<img src="{{ d.escudo_casa }}" alt="">{% endif %}<b>{{ d.casa }}</b></div>
+  {% if antes %}<div class="hora">{{ d.hora }}</div>
+  {% else %}<div class="gols"><span>{{ d.gols_casa }}</span><span class="sep"></span><span>{{ d.gols_fora }}</span></div>{% endif %}
+  <div class="time fora">{% if d.escudo_fora %}<img src="{{ d.escudo_fora }}" alt="">{% endif %}<b>{{ d.fora }}</b></div>
 </div>
-{% if antes and d.info %}<div class="info-jogo">{{ d.info }}</div>{% endif %}
-{% if d.autores_casa or d.autores_fora %}
-<div class="autores"><div>{% for a in d.autores_casa or [] %}{{ a }}<br>{% endfor %}</div><div class="d">{% for a in d.autores_fora or [] %}{{ a }}<br>{% endfor %}</div></div>
+{% if d.penaltis %}<div class="pen">{{ d.penaltis }}</div>{% endif %}
+{% if antes %}{% if d.info %}<div class="info-jogo">{{ d.info }}</div>{% endif %}
+{% elif d.autores_casa or d.autores_fora %}
+<div class="autores"><div>{{ (d.autores_casa or [])|join(' · ') }}</div><div class="f">{{ (d.autores_fora or [])|join(' · ') }}</div></div>
 {% endif %}
-{% if d.titulo %}<div class="bloco"><h1 class="fit" data-max="{{ d.tamanho or 84 }}" data-min="48">{{ d.titulo|destaque }}</h1></div>{% endif %}
 {% endblock %}

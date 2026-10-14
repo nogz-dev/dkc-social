@@ -84,5 +84,10 @@ async def baixar(url: str, max_lado: int = 1600) -> tuple[bytes, str]:
 async def data_uri(url: str | None, max_lado: int = 1600) -> str | None:
     if not url:
         return None
-    dados, mime = await baixar(url, max_lado)
+    try:
+        dados, mime = await baixar(url, max_lado)
+    except FotoErro:
+        raise
+    except Exception as e:  # rede, proxy, timeout: vira erro de foto (o chamador decide o plano B)
+        raise FotoErro(f"não consegui baixar a imagem ({type(e).__name__})")
     return f"data:{mime};base64,{base64.b64encode(dados).decode()}"

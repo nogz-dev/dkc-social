@@ -71,6 +71,7 @@ async def gols(fixture_id: int) -> list[dict]:
         t = e.get("time") or {}
         out.append({
             "time_id": (e.get("team") or {}).get("id"),
+            "jogador_id": (e.get("player") or {}).get("id"),
             "jogador": ((e.get("player") or {}).get("name") or "").strip(),
             "min": t.get("elapsed") or 0, "extra": t.get("extra"),
             "tipo": e.get("detail") or "",
@@ -131,6 +132,34 @@ def virada(gs: list[dict], casa_id: int, vencedor_id: int | None) -> bool:
     return False
 
 
+def heroi(gs: list[dict], venc_id: int | None) -> dict | None:
+    """Protagonista do jogo: quem mais marcou pelo vencedor (empate: quem mais marcou);
+    em caso de igualdade, o autor do último gol."""
+    cands = [g for g in gs if "Own" not in g["tipo"] and (venc_id is None or g["time_id"] == venc_id)]
+    if not cands:
+        return None
+    cont: dict[Any, int] = {}
+    for g in cands:
+        cont[g["jogador_id"]] = cont.get(g["jogador_id"], 0) + 1
+    melhor = max(cont.values())
+    for g in reversed(cands):
+        if cont[g["jogador_id"]] == melhor:
+            return g
+    return None
+
+
+async def nome_completo(jogador_id: int | None) -> str | None:
+    if not jogador_id:
+        return None
+    try:
+        d = await _get("players/profiles", {"player": jogador_id})
+        p = ((d.get("response") or [{}])[0].get("player")) or {}
+        nome = " ".join(x for x in (p.get("firstname"), p.get("lastname")) if x).strip()
+        return nome or p.get("name")
+    except Exception:
+        return None
+
+
 def montar(j: dict, gs: list[dict], handle: str = "seutipster.app") -> dict:
     lid = j["league"]["id"]
     liga = rodada.IDS[lid]
@@ -165,6 +194,7 @@ def montar(j: dict, gs: list[dict], handle: str = "seutipster.app") -> dict:
 
     vid = ((j.get("fixture") or {}).get("venue") or {}).get("id")
     dados = {
+        "lado_destaque": "fora" if venc_id == ta["id"] else "casa",
         "foto": f"{rodada.MEDIA}/football/venues/{vid}.png" if vid else None,
         "tag": "Fim de jogo", "tag2": liga["curto"],
         "casa": casa, "fora": fora, "gols_casa": gc, "gols_fora": gf,

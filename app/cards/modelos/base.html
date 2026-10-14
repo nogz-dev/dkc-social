@@ -2,30 +2,48 @@
 <html><head><meta charset="utf-8">
 <style>
 {{ fontes|safe }}
-:root{--cor:{{ marca.cor }};--cor-ink:{{ marca.cor_ink }};--bg:{{ marca.bg }};--ink:{{ marca.ink }};--mute:{{ marca.mute }}}
+:root{
+  --cor:{{ marca.cor }};            /* cor da marca do perfil (fita, detalhes) */
+  --cor-ink:{{ marca.cor_ink }};
+  --bg:{{ marca.bg }};
+  --ink:#ffffff;
+  --faixa:{{ d.cor_faixa or marca.bg }};          /* cor do clube protagonista */
+  --faixa-ink:{{ '#ffffff' if (d.faixa_escura if d.cor_faixa else True) else '#0a0a0a' }};
+}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:1080px;height:1350px;overflow:hidden}
-body{background:var(--bg);color:var(--ink);font-family:CardInter,sans-serif;position:relative;-webkit-font-smoothing:antialiased}
-em{font-style:normal;color:var(--cor)}
-.foto{position:absolute;left:0;right:0;top:0;background-size:cover;background-repeat:no-repeat}
-.sombra{position:absolute;left:0;right:0;top:0}
-.tags{position:absolute;left:64px;top:64px;display:flex;gap:14px;z-index:5}
-.pill{background:var(--cor);color:var(--cor-ink);font-weight:900;font-size:25px;letter-spacing:2px;padding:12px 20px;border-radius:6px;text-transform:uppercase;line-height:1}
-.pill.o{background:rgba(0,0,0,.45);color:var(--cor);box-shadow:inset 0 0 0 3px var(--cor)}
-.fit{overflow:hidden;font-weight:900;text-transform:uppercase;letter-spacing:-2px;line-height:.98;padding-bottom:4px}
-.rodape{position:absolute;left:64px;right:64px;bottom:54px;display:flex;justify-content:space-between;align-items:flex-end;z-index:5}
-.rodape img{height:48px;display:block}
-.rodape .info{text-align:right;font-weight:500;font-size:19px;color:var(--mute);line-height:1.45}
-.credito{position:absolute;right:24px;top:30px;font-size:13px;color:rgba(255,255,255,.55);font-weight:500;z-index:4}
-.fatos{display:flex;border-top:2px solid rgba(255,255,255,.14);padding-top:26px;margin-top:30px}
-.fatos .f{flex:1;min-width:0}
-.fatos b{display:block;font-weight:900;font-size:56px;color:var(--cor);letter-spacing:-1px;line-height:1.05}
-.fatos span{display:block;font-weight:500;font-size:20px;color:var(--mute);text-transform:uppercase;letter-spacing:1px;line-height:1.25;margin-top:6px}
-.arrasta{position:absolute;right:64px;bottom:130px;font-weight:800;font-size:22px;letter-spacing:2px;color:var(--cor);z-index:5}
+body{background:#000;color:var(--ink);font-family:Barlow,CardInter,sans-serif;position:relative;-webkit-font-smoothing:antialiased}
+
+/* foto protagonista ocupa o card inteiro */
+.foto{position:absolute;inset:0;background-size:cover;background-repeat:no-repeat;background-position:{{ d.foco or 'center 20%' }}}
+.foto.sem{background:radial-gradient(120% 80% at 70% 10%, color-mix(in srgb,var(--faixa) 70%,#000) 0%, #000 70%)}
+
+/* granulado de impressão: tira o aspecto "liso de computador" */
+.grao{position:absolute;inset:0;z-index:6;pointer-events:none;opacity:.16;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+
+/* fita adesiva da marca, levemente torta */
+.fita{position:absolute;left:52px;top:58px;z-index:7;display:flex;gap:10px;align-items:center;transform:rotate(-2.2deg);transform-origin:left center}
+.fita span{background:var(--cor);color:var(--cor-ink);font-weight:800;font-style:italic;font-size:40px;line-height:1;padding:10px 22px 8px 18px;
+  clip-path:polygon(0 4%,3% 0,97% 6%,100% 0,99% 96%,96% 100%,2% 94%,0 100%)}
+.fita i{font-style:normal;font-weight:700;font-size:28px;color:#fff;background:rgba(0,0,0,.72);padding:8px 14px 6px}
+
+.credito{position:absolute;right:30px;top:50%;z-index:7;transform:rotate(90deg) translateX(50%);transform-origin:right top;
+  font-weight:500;font-size:17px;letter-spacing:.5px;color:rgba(255,255,255,.7);white-space:nowrap}
+
+/* manchete: itálico condensado, como grafismo de transmissão */
+.manchete{font-weight:900;font-style:italic;text-transform:uppercase;line-height:.93;letter-spacing:-1px;overflow:hidden;
+  text-shadow:0 6px 30px rgba(0,0,0,.45);padding:.1em .06em .06em 0}
+.manchete em{font-style:italic;color:var(--cor-ink);background:linear-gradient(transparent 17%,var(--cor) 17%,var(--cor) 95%,transparent 95%);padding:0 .08em;-webkit-box-decoration-break:clone;box-decoration-break:clone;text-shadow:none}
+
+.rodape{position:absolute;left:56px;right:56px;bottom:40px;z-index:7;display:flex;justify-content:space-between;align-items:flex-end}
+.rodape img{height:42px;display:block}
+.rodape .info{text-align:right;font-weight:600;font-size:21px;line-height:1.25;opacity:.85}
 {% block estilo %}{% endblock %}
 </style></head>
 <body>
 {% block corpo %}{% endblock %}
+<div class="grao"></div>
 <div class="rodape">
   {% if marca.logo %}<img src="{{ marca.logo }}" alt="">{% else %}<b style="font-size:34px">{{ marca.nome }}</b>{% endif %}
   <div class="info">@{{ marca.handle }}{% if fonte %}<br>Fonte: {{ fonte }}{% endif %}</div>

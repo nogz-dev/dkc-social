@@ -1,22 +1,27 @@
 {% extends "base.html" %}
 {% block estilo %}
-.foto{height:{{ 900 if d.foto else 0 }}px;background-position:{{ d.foco or 'center 25%' }}}
-.sombra{height:900px;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 45%,var(--bg) 96%)}
-.glow{position:absolute;width:900px;height:900px;right:-300px;top:-250px;background:radial-gradient(circle,color-mix(in srgb,var(--cor) 20%,transparent),transparent 65%)}
-.marca-dagua{position:absolute;right:-30px;top:150px;font-weight:900;font-size:400px;letter-spacing:-28px;line-height:1;color:transparent;-webkit-text-stroke:3px color-mix(in srgb,var(--cor) 24%,transparent);white-space:nowrap}
-.bloco{position:absolute;left:64px;right:64px;bottom:150px;z-index:5}
-.bloco h1{max-height:{{ 400 if d.fatos else 500 }}px}
-.linha-fina{font-weight:500;font-size:30px;line-height:1.3;color:var(--ink);opacity:.85;margin-top:18px}
+.sombra{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.4) 0%,rgba(0,0,0,0) 20%,rgba(0,0,0,0) 36%,rgba(0,0,0,.72) 60%,#000 86%)}
+.marca-dagua{position:absolute;left:-20px;top:170px;font-weight:900;font-style:italic;font-size:420px;line-height:.8;letter-spacing:-12px;color:transparent;
+  -webkit-text-stroke:3px color-mix(in srgb,var(--cor) 35%,transparent);white-space:nowrap;text-transform:uppercase}
+.bloco{position:absolute;left:52px;right:60px;bottom:{{ 250 if d.fatos else 140 }}px;z-index:5}
+.bloco .manchete{max-height:{{ 470 if d.fatos else 560 }}px}
+.linha-fina{font-weight:600;font-size:34px;line-height:1.18;margin-top:18px;max-width:920px;opacity:.92}
+.fatos{position:absolute;left:52px;right:52px;bottom:128px;z-index:5;display:flex;align-items:flex-end}
+.fatos .f{flex:1;min-width:0;padding:0 18px;border-left:4px solid var(--cor)}
+.fatos .f:first-child{padding-left:16px}
+.fatos b{display:block;font-weight:900;font-style:italic;font-size:62px;line-height:.9;letter-spacing:-1px}
+.fatos span{display:block;font-weight:600;font-size:22px;line-height:1.15;margin-top:6px;opacity:.82}
 {% endblock %}
 {% block corpo %}
-{% if d.foto %}<div class="foto" style="background-image:url('{{ d.foto }}')"></div><div class="sombra"></div>
-  {% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
-{% else %}<div class="glow"></div>{% if d.marca_dagua %}<div class="marca-dagua">{{ d.marca_dagua }}</div>{% endif %}{% endif %}
-<div class="tags">{% if d.tag %}<div class="pill">{{ d.tag }}</div>{% endif %}{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
+<div class="foto {{ '' if d.foto else 'sem' }}" {% if d.foto %}style="background-image:url('{{ d.foto }}')"{% endif %}></div>
+<div class="sombra"></div>
+{% if not d.foto and d.marca_dagua %}<div class="marca-dagua">{{ d.marca_dagua }}</div>{% endif %}
+{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
 <div class="bloco">
-  <h1 class="fit" data-max="{{ d.tamanho or 108 }}" data-min="56">{{ d.titulo|destaque }}</h1>
+  <h1 class="manchete fit" data-max="{{ d.tamanho or 158 }}" data-min="72">{{ d.titulo|destaque }}</h1>
   {% if d.linha_fina %}<p class="linha-fina">{{ d.linha_fina }}</p>{% endif %}
-  {% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
 </div>
-{% if d.arrasta %}<div class="arrasta" style="top:76px;bottom:auto">ARRASTA →</div>{% endif %}
+{% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
+{% if d.arrasta %}<div style="position:absolute;right:56px;top:66px;z-index:7;font-weight:800;font-style:italic;font-size:30px;color:#fff;transform:rotate(-2deg)">Arrasta ››</div>{% endif %}
 {% endblock %}

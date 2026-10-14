@@ -1,38 +1,37 @@
 {% extends "base.html" %}
 {% set n = d.jogos|length %}
-{% set alt = 100 if n <= 6 else (90 if n <= 7 else 78) %}
+{% set alt = 96 if n <= 6 else (86 if n <= 7 else 76) %}
 {% block estilo %}
-.foto{height:470px;background-position:{{ d.foco or 'center 30%' }}}
-.sombra{height:472px;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.1) 40%,var(--bg) 100%)}
-.cab{position:absolute;left:64px;right:64px;top:250px;z-index:5}
-.cab h1{max-height:180px}
-.cab .data{font-weight:600;font-size:28px;color:var(--mute);text-transform:uppercase;letter-spacing:2px;margin-top:12px;display:flex;align-items:center;gap:14px}
-.cab .data img{height:40px;width:40px;object-fit:contain}
-.lista{position:absolute;left:48px;right:48px;top:{{ 525 if n <= 6 else 505 }}px;display:flex;flex-direction:column;gap:10px}
-.jogo{height:{{ alt }}px;display:grid;grid-template-columns:120px 1fr 56px 1fr;align-items:center;background:rgba(255,255,255,.045);border-radius:16px;padding:0 22px;gap:8px}
-.hora{font-weight:900;font-size:{{ 32 if n <= 7 else 28 }}px;color:var(--cor);letter-spacing:-.5px}
-.time{display:flex;align-items:center;gap:16px;font-weight:800;font-size:{{ 31 if n <= 7 else 27 }}px;text-transform:uppercase;letter-spacing:-.5px;min-width:0}
-.time span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.time.casa{justify-content:flex-end;text-align:right}
-.time img{width:{{ 58 if n <= 7 else 50 }}px;height:{{ 58 if n <= 7 else 50 }}px;object-fit:contain;flex:none}
-.x{text-align:center;font-weight:700;font-size:26px;color:var(--mute)}
+.foto{bottom:auto;height:560px}
+.sombra{position:absolute;left:0;right:0;top:0;height:562px;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.05) 35%,rgba(0,0,0,.8) 80%,#000 100%)}
+.cab{position:absolute;left:52px;right:52px;top:250px;z-index:5}
+.cab .manchete{max-height:220px}
+.cab .data{display:flex;align-items:center;gap:12px;font-weight:700;font-size:32px;margin-top:14px;opacity:.9}
+.cab .data img{width:44px;height:44px;object-fit:contain}
+.lista{position:absolute;left:40px;right:40px;top:{{ 560 if n <= 6 else 540 }}px;z-index:5;display:flex;flex-direction:column}
+.jogo{height:{{ alt }}px;display:grid;grid-template-columns:130px 1fr 40px 1fr;align-items:center;gap:10px;border-bottom:2px solid rgba(255,255,255,.12)}
+.jogo .h{font-weight:900;font-style:italic;font-size:{{ 46 if n <= 7 else 40 }}px;letter-spacing:-1px;color:var(--cor)}
+.jogo .t{display:flex;align-items:center;gap:16px;font-weight:800;font-style:italic;font-size:{{ 40 if n <= 7 else 34 }}px;text-transform:uppercase;min-width:0;line-height:1}
+.jogo .t span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.jogo .t.c{justify-content:flex-end;text-align:right}
+.jogo .t img{width:{{ 56 if n <= 7 else 48 }}px;height:{{ 56 if n <= 7 else 48 }}px;object-fit:contain;flex:none}
+.jogo .x{text-align:center;font-weight:700;font-size:28px;opacity:.5}
 {% endblock %}
 {% block corpo %}
-{% if d.foto %}<div class="foto" style="background-image:url('{{ d.foto }}')"></div><div class="sombra"></div>
-  {% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}{% endif %}
-<div class="tags">{% if d.tag %}<div class="pill">{{ d.tag }}</div>{% endif %}{% if d.tag2 %}<div class="pill o">{{ d.tag2 }}</div>{% endif %}</div>
+<div class="foto {{ '' if d.foto else 'sem' }}" {% if d.foto %}style="background-image:url('{{ d.foto }}')"{% endif %}></div>
+<div class="sombra"></div>
+{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
 <div class="cab">
-  <h1 class="fit" data-max="{{ d.tamanho or 88 }}" data-min="50">{{ d.titulo|destaque }}</h1>
+  <h1 class="manchete fit" data-max="{{ d.tamanho or 110 }}" data-min="60">{{ d.titulo|destaque }}</h1>
   {% if d.data %}<div class="data">{% if d.logo_liga %}<img src="{{ d.logo_liga }}" alt="">{% endif %}{{ d.data }}</div>{% endif %}
 </div>
 <div class="lista">
 {% for j in d.jogos[:8] %}
-  <div class="jogo">
-    <div class="hora">{{ j.hora }}</div>
-    <div class="time casa"><span>{{ j.casa }}</span>{% if j.escudo_casa %}<img src="{{ j.escudo_casa }}" alt="">{% endif %}</div>
-    <div class="x">×</div>
-    <div class="time">{% if j.escudo_fora %}<img src="{{ j.escudo_fora }}" alt="">{% endif %}<span>{{ j.fora }}</span></div>
-  </div>
+  <div class="jogo"><div class="h">{{ j.hora }}</div>
+    <div class="t c"><span>{{ j.casa }}</span>{% if j.escudo_casa %}<img src="{{ j.escudo_casa }}" alt="">{% endif %}</div>
+    <div class="x">x</div>
+    <div class="t">{% if j.escudo_fora %}<img src="{{ j.escudo_fora }}" alt="">{% endif %}<span>{{ j.fora }}</span></div></div>
 {% endfor %}
 </div>
 {% endblock %}

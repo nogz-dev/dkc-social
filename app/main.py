@@ -834,7 +834,24 @@ async def ciclo_resultados() -> dict[str, Any]:
         try:
             gs = await robo_resultados.gols(fid)
             pedido = robo_resultados.montar(j, gs, handle)
-            pid, _av = await criar_post_de_slides(pedido, "robo")
+            d0 = pedido["slides"][0]["dados"]
+            foto_estadio = d0.get("foto")
+            await foto_do_jogo(j, gs, pedido)
+            try:
+                pid, _av = await criar_post_de_slides(pedido, "robo")
+            except HTTPException as e:
+                if e.status_code != 422:
+                    raise
+                # foto do jogador não baixou: estádio; se nem isso, sai sem foto
+                d0["foto"] = foto_estadio if d0.get("foto") != foto_estadio else None
+                d0["credito_foto"] = None
+                try:
+                    pid, _av = await criar_post_de_slides(pedido, "robo")
+                except HTTPException as e2:
+                    if e2.status_code != 422:
+                        raise
+                    d0["foto"] = None
+                    pid, _av = await criar_post_de_slides(pedido, "robo")
             await pool.execute(
                 "INSERT INTO resultados(fixture_id,status,post_id) VALUES($1,'postado',$2) "
                 "ON CONFLICT (fixture_id) DO UPDATE SET status='postado', post_id=EXCLUDED.post_id, erro=NULL, em=now()",
@@ -850,6 +867,37 @@ async def ciclo_resultados() -> dict[str, Any]:
                 fid, str(msg)[:300])
     _resultados_estado["erro"] = None
     return res
+
+
+async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> None:
+    """Foto de jogador no card de resultado: matéria do jogo → protagonista no Wikimedia → estádio."""
+    d = pedido["slides"][0]["dados"]
+    casa = robo_rodada.nome(j["teams"]["home"]["name"]).split()[0].lower()
+    fora = robo_rodada.nome(j["teams"]["away"]["name"]).split()[0].lower()
+    # 1) foto da matéria sobre o jogo que os portais acabaram de publicar
+    try:
+        rows = await pool.fetch(
+            "SELECT url, fonte FROM noticias_itens WHERE visto_em > now() - interval '4 hours' "
+            "AND lower(titulo) LIKE $1 AND lower(titulo) LIKE $2 ORDER BY visto_em DESC LIMIT 3",
+            f"%{casa}%", f"%{fora}%")
+        for r in rows:
+            m = await robo_noticias.ler_materia(r["url"])
+            if m.get("og_image"):
+                d["foto"], d["credito_foto"], d["foco"] = m["og_image"], f"Foto: reprodução {r['fonte']}", "center 25%"
+                return
+    except Exception:
+        log.exception("[RESULTADOS] foto da matéria")
+    # 2) protagonista do jogo (foto livre)
+    venc = j["teams"]["home"]["id"] if j["teams"]["home"].get("winner") else (
+        j["teams"]["away"]["id"] if j["teams"]["away"].get("winner") else None)
+    h = robo_resultados.heroi(gs, venc)
+    if h:
+        nome = await robo_resultados.nome_completo(h.get("jogador_id")) or h.get("jogador")
+        wm = await robo_noticias.foto_wikimedia(nome or "")
+        if wm:
+            d["foto"], d["credito_foto"], d["foco"] = wm[0], wm[1], "center 18%"
+            return
+    # 3) fica a foto do estádio (já preenchida)
 
 
 async def job_resultados() -> None:
@@ -1051,15 +1099,15 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
 
     # foto: Wikimedia (livre) → imagem da matéria → imagem do feed
     foto, credito = None, None
-    wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
-    if wm:
-        foto, credito = wm
-    else:
-        for f in fontes:
-            if f.get("og_image") or f.get("imagem"):
-                foto = f.get("og_image") or f.get("imagem")
-                credito = f"Foto: reprodução {f['fonte']}"
-                break
+    for f in fontes:  # 1) foto da própria matéria: atual, do lance/do jogador
+        if f.get("og_image") or f.get("imagem"):
+            foto = f.get("og_image") or f.get("imagem")
+            credito = f"Foto: reprodução {f['fonte']}"
+            break
+    if not foto:  # 2) foto livre do protagonista
+        wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
+        if wm:
+            foto, credito = wm
     urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
     dados = {
         "foto": foto, "credito_foto": credito, "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
@@ -1078,11 +1126,19 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     try:
         pid, _av = await criar_post_de_slides(pedido, "robo")
     except HTTPException as e:
-        if foto and e.status_code == 422:  # foto não baixou: sai sem foto em vez de perder a notícia
-            dados["foto"] = None
-            dados["credito_foto"] = None
-            dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
-            pid, _av = await criar_post_de_slides(pedido, "robo")
+        if foto and e.status_code == 422:  # foto da matéria não baixou: tenta foto livre, senão sai sem foto
+            wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
+            dados["foto"], dados["credito_foto"] = (wm if wm else (None, None))
+            if not wm:
+                dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+            try:
+                pid, _av = await criar_post_de_slides(pedido, "robo")
+            except HTTPException as e2:
+                if e2.status_code != 422:
+                    raise
+                dados["foto"], dados["credito_foto"] = None, None
+                dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+                pid, _av = await criar_post_de_slides(pedido, "robo")
         else:
             raise
     await pool.execute("UPDATE assuntos SET status='postado', post_id=$2, postado_em=now() WHERE id=$1", aid, pid)
