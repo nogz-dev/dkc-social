@@ -969,7 +969,8 @@ async def ciclo_noticias(forcar: bool = False) -> dict[str, Any]:
                     if aid not in ids_recentes:
                         aid = None
                     titulo_a = (o.get("assunto") or it["titulo"])[:120]
-                    nota = float(o.get("nota") or 0)
+                    nota = robo_noticias.reforco(f"{it['titulo']} {it['resumo']} {titulo_a}",
+                                                 float(o.get("nota") or 0), o.get("tipo"))
                     if aid is None and titulo_a in novos_no_lote:
                         aid = novos_no_lote[titulo_a]
                     if aid is None:

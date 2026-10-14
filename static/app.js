@@ -420,7 +420,7 @@ async function renderAjustes() {
       <div class="linha"><span>Uso da IA hoje</span><span class="muted">${Math.round(tk / 1000)} mil de ${Math.round(n.limite_tokens / 1000)} mil tokens</span></div>
       <div class="linha"><span>Última varredura</span><span class="muted">${n.ultima ? quando(n.ultima) : "ainda não"}</span></div>
       ${n.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(n.erro)}</span></div>` : ""}
-      ${n.assuntos_24h.length ? `<div class="side-title" style="padding:10px 0 0">Assuntos das últimas 24h</div>` + n.assuntos_24h.map((a) => `<div class="linha"><span>${esc(a.titulo)}</span><span class="${a.nota >= 7 ? "ok" : "muted"}" title="${a.n_fontes} fonte(s) · ${esc(a.status)}">${(+a.nota).toFixed(0)}</span></div>`).join("") : ""}`;
+      ${n.assuntos_24h.length ? `<div class="side-title" style="padding:10px 0 0">Assuntos das últimas 24h</div>` + n.assuntos_24h.map((a) => `<div class="linha"><span>${esc(a.titulo)}</span><span class="${a.nota >= 6 ? "ok" : "muted"}" title="${a.n_fontes} fonte(s) · ${esc(a.status)}">${(+a.nota).toFixed(0)}</span></div>`).join("") : ""}`;
     $("#bNot").textContent = n.ligado ? "Desligar robô" : "Ligar robô";
   } catch (err) { const el = $("#ajNot"); if (el) el.innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
   try {

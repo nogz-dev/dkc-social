@@ -43,6 +43,10 @@ FEEDS_PADRAO: list[tuple[str, str]] = [
     ("Marca", "https://e00-marca.uecdn.es/rss/futbol/primera-division.xml"),
     ("Mundo Deportivo", "https://www.mundodeportivo.com/rss/futbol"),
     ("Gazzetta", "https://www.gazzetta.it/rss/calcio.xml"),
+    # mercado de apostas / regulamentação
+    ("BNL Data", "https://bnldata.com.br/feed/"),
+    ("iGaming Brazil", "https://igamingbrazil.com/feed/"),
+    ("Games Magazine Brasil", "https://www.gamesbras.com/feed"),
 ]
 
 
@@ -61,7 +65,7 @@ def feeds() -> list[tuple[str, str]]:
 
 INTERVALO_MIN = int(os.getenv("NOTICIAS_INTERVALO_MIN", "15"))
 TETO_DIA = int(os.getenv("NOTICIAS_TETO_DIA", "8"))
-NOTA_MIN = float(os.getenv("NOTICIAS_NOTA_MIN", "7"))
+NOTA_MIN = float(os.getenv("NOTICIAS_NOTA_MIN", "6"))
 NOTA_URGENTE = float(os.getenv("NOTICIAS_NOTA_URGENTE", "9"))
 TOKENS_DIA = int(os.getenv("NOTICIAS_TOKENS_DIA", "600000"))
 MODELO_TRIAGEM = os.getenv("NOTICIAS_MODELO_TRIAGEM", "claude-haiku-5-5")
@@ -256,6 +260,12 @@ Para CADA manchete devolva um objeto JSON com:
 - "tipo": mercado | tecnico | lesao | resultado | polemica | recorde | selecao | bastidor | outro
 - "motivo": até 12 palavras
 
+PRIORIDADES DA CASA (o dono do perfil pediu, valem mais que o resto):
+- Qualquer notícia relevante sobre Neymar ou Cristiano Ronaldo: nota mínima 7.
+- Clubes brasileiros da Série A e da Série B (contratação, saída, técnico, lesão, bastidor, diretoria, finanças, polêmica): nota mínima 6, mesmo que só um portal tenha dado.
+- Regulamentação e mercado de apostas no Brasil (bets, Secretaria de Prêmios e Apostas, Ministério da Fazenda, CPI, patrocínio de bets, proibições, impostos, licenças): nota mínima 7.
+- Uma notícia relevante dada por um só portal vale tanto quanto uma repetida em vários. Não rebaixe por exclusividade.
+
 Critérios de nota:
 - 9–10: bomba que todo torcedor vai comentar hoje (contratação/saída de craque ou de clube grande, demissão de técnico de grande, lesão grave de estrela antes de jogo decisivo, escândalo).
 - 7–8: notícia forte de clube grande brasileiro ou europeu, escalação/desfalque relevante para jogo grande do dia, recorde, polêmica com repercussão.
@@ -296,6 +306,33 @@ Regras da legenda (padrão da casa):
 - Nada de aposta/odds/casa de aposta na legenda.
 - Última linha: 3 a 5 hashtags, misturando 2–3 específicas (clube/jogador) e 1–2 do tema (#MercadoDaBola, #Brasileirão...). Sem #futebol genérico se já houver 4.
 - Tamanho: 300 a 900 caracteres."""
+
+
+# Reforço por palavra-chave (garante as prioridades mesmo se a IA errar a nota)
+_CLUBES_BR = (
+    "flamengo", "palmeiras", "corinthians", "são paulo", "sao paulo", "santos", "vasco", "fluminense", "botafogo",
+    "grêmio", "gremio", "internacional", "inter de porto alegre", "atlético-mg", "atletico-mg", "atlético mineiro",
+    "galo", "cruzeiro", "bahia", "vitória", "vitoria", "fortaleza", "ceará", "ceara", "sport recife", "athletico",
+    "coritiba", "bragantino", "juventude", "mirassol", "remo", "paysandu", "goiás", "goias", "atlético-go",
+    "américa-mg", "america-mg", "chapecoense", "avaí", "avai", "criciúma", "criciuma", "cuiabá", "cuiaba",
+    "novorizontino", "operário", "operario", "ponte preta", "guarani", "náutico", "nautico", "vila nova", "crb",
+    "amazonas fc", "botafogo-sp", "ferroviária", "ferroviaria", "athletic club", "volta redonda", "brasileirão",
+    "série a", "série b", "serie b",
+)
+_ESTRELAS = ("neymar", "cristiano ronaldo", "cr7")
+_APOSTAS = ("bets", " bet ", "apostas", "casas de aposta", "secretaria de prêmios", "prêmios e apostas", "spa/mf",
+            "regulamentação", "regulamentacao", "jogo responsável", "cpi das bets", "loterias", "igaming")
+
+
+def reforco(texto: str, nota: float, tipo: str | None) -> float:
+    t = f" {texto.lower()} "
+    if any(k in t for k in _ESTRELAS):
+        nota = max(nota, 7.0)
+    if any(k in t for k in _APOSTAS) and any(k in t for k in ("bet", "aposta", "loteria", "igaming")):
+        nota = max(nota, 7.0)
+    if tipo != "resultado" and nota >= 3 and any(k in t for k in _CLUBES_BR):
+        nota = max(nota, 6.0)
+    return nota
 
 
 def prompt_triagem(itens: list[dict], recentes: list[dict]) -> str:
