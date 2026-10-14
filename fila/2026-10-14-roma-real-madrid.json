@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-14-roma-real-madrid",
+  "perfil": "seutipster.app",
+  "linha": "resultado",
+  "titulo": "Roma 3x4 Real Madrid (virada)",
+  "fonte": "Sky Sport / VAVEL",
+  "fonte_urls": [
+    "https://www.vavel.com/en-us/soccer/2026/10/14/1275169-as-roma-vs-real-madrid-live-score-uefa-champions-league.html",
+    "https://sport.sky.it/calcio/champions-league/partite/2026/giornata-2/roma-real-madrid/risultato-gol",
+    "https://canal26.com/futbol/champions-league/roma-vs-real-madrid-en-vivo-hoy-resultado-goles-y-minuto-a-minuto-de-la-champions-league-2026-2027"
+  ],
+  "legenda": "Real Madrid perdia por 3 a 1 aos 83 minutos em Roma. Terminou 4 a 3 pro Real. 🤯\n\nMalen fez dois e a Roma abriu dois gols de vantagem no Olímpico. Aí veio o fim de jogo: Carlos Espí aos 83', Endrick aos 85' e Rüdiger aos 90'.\n\nTrês gols em sete minutos, virada na fase de liga da Champions.\n\nMaior virada da temporada até aqui? 👇\n\n#RealMadrid #Roma #ChampionsLeague #Endrick",
+  "slides": [
+    {"modelo": "resultado", "dados": {
+      "foto": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Stadio_Olimpico_di_Roma_before_the_match_AS_Roma_vs_HJK_Helsinki_(2022).jpg?width=1600",
+      "credito_foto": "Foto: Wikimedia Commons",
+      "tag": "Fim de jogo", "tag2": "Champions",
+      "casa": "Roma", "fora": "Real Madrid", "gols_casa": 3, "gols_fora": 4,
+      "escudo_casa": "https://media.api-sports.io/football/teams/497.png",
+      "escudo_fora": "https://media.api-sports.io/football/teams/541.png",
+      "autores_casa": ["De Roon 20'", "Malen 50'", "Malen 58'"],
+      "autores_fora": ["Mbappé 25'", "Carlos Espí 83'", "Endrick 85'", "Rüdiger 90'"],
+      "titulo": "Real vira com *3 gols em 7 minutos*"
+    }}
+  ]
+}
