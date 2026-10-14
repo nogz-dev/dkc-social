@@ -944,6 +944,11 @@ async def manifest():
     return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(STATIC / "favicon.ico", media_type="image/x-icon")
+
+
 @app.get("/")
 async def index():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
