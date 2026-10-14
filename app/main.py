@@ -344,8 +344,36 @@ async def criar_post(
                 uuid.uuid4(), pid, i, mime, dados, secrets.token_urlsafe(18),
             )
     await evento(pid, "criado", origem)
-    asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80]))
+    # regra: só RESULTADO de jogo (vindo de robô/Claude) pode sair sem aprovação
+    if linha == "resultado" and origem != "manual" and await auto_resultado_ligado():
+        res = await _aprovar_um(pid, None, base_publica())
+        await evento(pid, "auto_aprovado", json.dumps(res))
+        asyncio.create_task(enviar_push({
+            "title": "✅ Resultado publicado", "body": titulo or legenda[:80],
+            "url": f"/?post={pid}", "tag": f"post-{pid}",
+        }))
+    else:
+        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80]))
     return pid
+
+
+async def auto_resultado_ligado() -> bool:
+    return (await cfg_get("auto_resultado")) != "0"
+
+
+class AutoIn(BaseModel):
+    ligado: bool
+
+
+@app.get("/api/config/auto-resultado")
+async def get_auto(_=Depends(exige_login)):
+    return {"ligado": await auto_resultado_ligado()}
+
+
+@app.post("/api/config/auto-resultado")
+async def set_auto(body: AutoIn, _=Depends(exige_login)):
+    await cfg_set("auto_resultado", "1" if body.ligado else "0")
+    return {"ligado": body.ligado}
 
 
 # -------------------------------------------------------------- push ----

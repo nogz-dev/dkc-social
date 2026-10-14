@@ -117,6 +117,7 @@ document.addEventListener("click", (e) => {
   else if (act === "push-teste") testarPush();
   else if (act === "sincronizar") sincronizar();
   else if (act === "pauta") buscarPauta();
+  else if (act === "auto") alternarAuto();
   else if (act === "sair") sair();
 });
 
@@ -358,6 +359,9 @@ async function renderAjustes() {
     <div class="box"><h3>Perfis do Instagram</h3><p>Puxa as contas conectadas no Publora.</p>
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
+    <div class="box"><h3>Publicação automática</h3><p>Só posts de <b>resultado final</b> dos principais jogos saem sem aprovação. Todo o resto passa pela fila.</p>
+      <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
+      <button class="btn" data-act="auto" id="bAuto">…</button></div>
     <div class="box"><h3>Pauta do Claude</h3><p>Posts que o Claude prepara no chat chegam por aqui sozinhos.</p>
       <div id="ajPauta"><p>Verificando…</p></div>
       <button class="btn" data-act="pauta">Buscar pauta agora</button></div>
@@ -372,6 +376,11 @@ async function renderAjustes() {
       <div class="linha"><span>Endereço público</span><span class="muted">${esc(s.base_publica)}</span></div>`;
   } catch (err) { $("#ajSaude").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
   try {
+    const a = await api("/api/config/auto-resultado"); S.auto = a.ligado;
+    $("#ajAuto").innerHTML = a.ligado ? `<span class="ok">Ligado</span>` : `<span class="nok">Desligado</span>`;
+    $("#bAuto").textContent = a.ligado ? "Desligar (resultado também passa pela fila)" : "Ligar";
+  } catch {}
+  try {
     const p = await api("/api/pauta/status");
     const ult = p.importados.slice(0, 5).map((i) => `<div class="linha"><span>${esc(i.path.replace(/^fila\//, ""))}</span>${i.status === "ok" ? `<span class="ok">na fila</span>` : `<span class="nok" title="${esc(i.erro || "")}">erro</span>`}</div>`).join("");
     $("#ajPauta").innerHTML = `
@@ -379,6 +388,13 @@ async function renderAjustes() {
       <div class="linha"><span>Frequência</span><span class="muted">a cada ${Math.round(p.intervalo_s / 60 * 10) / 10} min</span></div>
       ${p.erro ? `<div class="linha"><span>Erro</span><span class="nok">${esc(p.erro)}</span></div>` : ""}${ult}`;
   } catch (err) { $("#ajPauta").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
+}
+
+async function alternarAuto() {
+  try {
+    await api("/api/config/auto-resultado", { method: "POST", json: { ligado: !S.auto } });
+    toast(!S.auto ? "Resultados automáticos ligados" : "Agora tudo passa pela fila"); renderAjustes();
+  } catch (err) { toast(err.message, true); }
 }
 
 async function buscarPauta() {
