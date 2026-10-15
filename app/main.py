@@ -45,6 +45,7 @@ STATIC = ROOT / "static"
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres@127.0.0.1:5433/dkc")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 ROBO_KEY = os.getenv("ROBO_KEY", "")  # chave dos robôs que criam posts
+QG_KEY = os.getenv("QG_KEY", "")  # chave do QG do Nog (só leitura do status)
 SESSAO_DIAS = 60
 
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
@@ -1429,6 +1430,45 @@ async def saude(request: Request, _=Depends(exige_login)):
     out["robo_configurado"] = bool(ROBO_KEY)
     out["api_football"] = bool(robo_rodada.chave())
     return out
+
+
+# ------------------------------------------------- QG do Nog (status) ----
+
+async def exige_qg(x_qg_key: str = Header(default="")) -> None:
+    if not QG_KEY or not hmac.compare_digest(x_qg_key, QG_KEY):
+        raise HTTPException(401, "chave do QG inválida")
+
+
+@app.get("/api/qg/status")
+async def qg_status(_=Depends(exige_qg)):
+    """Só leitura: o QG do Nog usa para mostrar a equipe do Social trabalhando de verdade."""
+    hoje = datetime.now(robo_rodada.TZ).date()
+    por_status = {r["status"]: r["n"] for r in await pool.fetch("SELECT status, count(*) n FROM posts GROUP BY status")}
+    dia = await pool.fetchrow(
+        "SELECT count(*) FILTER (WHERE status='publicado' AND publicado_em::date = (now() AT TIME ZONE 'America/Bahia')::date) pub, "
+        "count(*) FILTER (WHERE status='recusado' AND decidido_em::date = (now() AT TIME ZONE 'America/Bahia')::date) rec, "
+        "count(*) FILTER (WHERE criado_em::date = (now() AT TIME ZONE 'America/Bahia')::date) criados "
+        "FROM posts"
+    )
+    ultimo = await pool.fetchrow("SELECT titulo, status, linha, criado_em FROM posts ORDER BY criado_em DESC LIMIT 1")
+    res_hoje = await pool.fetchval(
+        "SELECT count(*) FROM resultados WHERE status='postado' AND (em AT TIME ZONE 'America/Sao_Paulo')::date=$1", hoje)
+    def _iso(v):
+        return v.isoformat() if hasattr(v, "isoformat") else v
+    return {
+        "agora": datetime.now(robo_rodada.TZ).isoformat(),
+        "fila": {k: por_status.get(k, 0) for k in STATUS_VALIDOS},
+        "hoje": {"publicados": dia["pub"], "recusados": dia["rec"], "criados": dia["criados"], "resultados": res_hoje},
+        "ultimo_post": ({"titulo": ultimo["titulo"], "status": ultimo["status"], "linha": ultimo["linha"],
+                         "criado_em": _iso(ultimo["criado_em"])} if ultimo else None),
+        "robos": {
+            "noticias": {"ligado": (await cfg_get("noticias_ligado")) != "0", "ultima": _iso(_noticias_estado["ultima"]),
+                         "erro": _noticias_estado["erro"]},
+            "resultados": {"ligado": (await cfg_get("resultados_ligado")) != "0", "ultima": _iso(_resultados_estado["ultima"]),
+                           "erro": _resultados_estado["erro"]},
+            "pauta": {"ultima": _iso(_pauta_estado["ultima"]), "erro": _pauta_estado["erro"]},
+        },
+    }
 
 
 # ----------------------------------------------------- mídia pública ----
