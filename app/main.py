@@ -33,8 +33,8 @@ from . import pauta, publora, webpush
 from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
 from .robos import resultados as robo_resultados
-from .cards import clubes, foto_jogador, fotos
-from .cards.render import MODELOS, renderizador
+from .cards import clubes, foto_jogador, fotos, openai_img
+from .cards.render import MODELOS, marca_de, renderizador
 
 log = logging.getLogger("dkc")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -622,6 +622,30 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     for i, sl in enumerate(slides, 1):
         if sl.get("modelo") not in MODELOS:
             raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
+    # arte pela OpenAI (todas as imagens), em paralelo; o que falhar cai no template próprio
+    artes: list = [None] * len(slides)
+    if openai_img.ativo():
+        marca = marca_de(handle)
+        async def _arte(i: int, sl: dict):
+            try:
+                artes[i] = await openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca)
+            except Exception as e:
+                log.warning("[ARTE] slide %d: %s", i + 1, e)
+                artes[i] = e
+        await asyncio.gather(*(_arte(i, sl) for i, sl in enumerate(slides)))
+    for i, sl in enumerate(slides, 1):
+        arte = artes[i - 1]
+        if isinstance(arte, tuple):
+            jpg, av_arte = arte
+            dd = sl.get("dados") or {}
+            img, av = await renderizador.png("arte", {
+                "foto": "data:image/jpeg;base64," + base64.b64encode(jpg).decode(),
+                "credito_foto": dd.get("credito_foto") if dd.get("foto") else None}, handle, fonte)
+            midias.append(("image/jpeg", img))
+            avisos += [f"slide {i}: {a}" for a in av_arte + av]
+            continue
+        if isinstance(arte, Exception):
+            avisos.append(f"slide {i}: arte da OpenAI não saiu ({str(arte)[:160]}): usado o template próprio")
         try:
             img, av = await renderizador.png(sl["modelo"], sl.get("dados") or {}, handle, fonte)
         except fotos.FotoErro as e:
@@ -1521,6 +1545,7 @@ async def saude(request: Request, _=Depends(exige_login)):
     out["api_football"] = bool(robo_rodada.chave())
     import importlib.util
     out["recorte"] = importlib.util.find_spec("rembg") is not None
+    out["imagens_openai"] = openai_img.status()
     return out
 
 

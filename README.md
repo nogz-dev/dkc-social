@@ -98,3 +98,15 @@ referência; buscamos candidatas pelo nome (Wikimedia Commons e, com
 (mesma pessoa da referência, fotografia limpa sem texto/logo/arte de outro
 canal, boa para capa). Sem foto conferida: resultado vai para a fila (não sai
 sozinho) e notícia sai sem foto de jogador.
+
+## Imagens pela OpenAI (desde 15/10/2026)
+
+Toda imagem de card é criada pela OpenAI (`gpt-image-2`, variável `OPENAI_API_KEY`). O sistema entrega a informação:
+texto exato, placar, escudos e a foto conferida do jogador como referência (nunca arte de outro veículo).
+Antes de usar a arte, o Claude confere se todo texto e número está certo e se não há logo de emissora; se errar,
+a OpenAI refaz uma vez com a lista de erros. Reprovou de novo ou deu erro: o card sai no template próprio, com aviso.
+O rodapé (logo real, @ e fonte) é sempre carimbado por nós.
+
+Variáveis: `OPENAI_IMAGE_MODEL` (padrão `gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE`
+(`1088x1360`), `OPENAI_IMAGENS_DIA` (trava diária, padrão 400), `IMAGENS_OPENAI=0` desliga e volta aos templates.
+`/api/saude` mostra `imagens_openai`.

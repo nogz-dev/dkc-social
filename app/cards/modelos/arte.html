@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{# Arte criada pela OpenAI ocupando o card inteiro; só o rodapé com a marca real é nosso. #}
+{% block estilo %}
+.grao{display:none}
+.pe{position:absolute;left:0;right:0;bottom:0;height:170px;z-index:5;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.82) 45%,#000)}
+{% endblock %}
+{% block corpo %}
+<div class="foto" style="background-image:url('{{ d.foto }}');background-position:center"></div>
+<div class="pe"></div>
+{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+{% endblock %}

@@ -22,7 +22,7 @@ from PIL import Image
 from . import fotos, recorte
 
 AQUI = Path(__file__).resolve().parent
-MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi", "destaque", "confronto", "clube", "editorial")
+MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi", "destaque", "confronto", "clube", "editorial", "arte")
 
 # ------------------------------------------------------------------ marcas --
 # Cada perfil posta com a própria identidade. Chave = @ do Instagram.
