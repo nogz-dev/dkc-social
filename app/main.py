@@ -45,7 +45,7 @@ STATIC = ROOT / "static"
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres@127.0.0.1:5433/dkc")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 ROBO_KEY = os.getenv("ROBO_KEY", "")  # chave dos robôs que criam posts
-QG_KEY = os.getenv("QG_KEY", "")  # chave do QG do Nog (só leitura do status)
+QG_KEY = os.getenv("QG_KEY", "").strip().strip("\"'").strip()  # chave do QG do Nog (só leitura do status)
 SESSAO_DIAS = 60
 
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
@@ -1434,9 +1434,16 @@ async def saude(request: Request, _=Depends(exige_login)):
 
 # ------------------------------------------------- QG do Nog (status) ----
 
+def _digital(v: str) -> str:
+    """Impressão digital curta da chave: compara os dois lados sem revelar a chave."""
+    return hashlib.sha256(v.encode()).hexdigest()[:8] if v else "vazia"
+
+
 async def exige_qg(x_qg_key: str = Header(default="")) -> None:
-    if not QG_KEY or not hmac.compare_digest(x_qg_key, QG_KEY):
-        raise HTTPException(401, "chave do QG inválida")
+    if not QG_KEY:
+        raise HTTPException(401, "QG_KEY não está configurada no DKC Social")
+    if not hmac.compare_digest(x_qg_key.strip(), QG_KEY):
+        raise HTTPException(401, f"chave diferente — DKC Social tem {_digital(QG_KEY)}, o QG mandou {_digital(x_qg_key.strip())}")
 
 
 @app.get("/api/qg/status")
