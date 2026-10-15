@@ -73,7 +73,7 @@ def _destaques(t: str) -> list[str]:
 
 # ------------------------------------------------------------- briefing --
 ESTILO = """Direção de arte (siga à risca):
-- Card vertical de Instagram 4:5 de um perfil brasileiro de futebol, no nível de TNT Sports Brasil e CazéTV: design editorial esportivo de transmissão, moderno, impactante, acabamento profissional de designer humano, NADA com cara de "feito por IA" (sem brilho plástico, sem pele de cera, sem elementos derretidos ou deformados).
+- Card vertical de Instagram 4:5 de um perfil brasileiro de futebol, no nível das grandes campanhas esportivas premium, com identidade própria (sem imitar nenhum canal): design editorial esportivo, moderno, impactante, acabamento profissional de designer humano, NADA com cara de "feito por IA" (sem brilho plástico, sem pele de cera, sem elementos derretidos ou deformados).
 - Tipografia: sans serif condensada pesada, itálica, caixa alta nas manchetes; hierarquia forte; uma ou duas palavras de destaque com marca-texto na cor da marca.
 - Cores: base escura quase preta {bg}, destaque da marca {cor} (use com moderação, em fitas/marca-texto/detalhes), e as cores do clube protagonista quando houver.
 - Grafismos de transmissão: faixas diagonais, fita adesiva com a etiqueta no topo à esquerda, granulado sutil de impressão, luz de estádio, profundidade.
