@@ -1442,6 +1442,8 @@ async def saude(request: Request, _=Depends(exige_login)):
     out["push_inscritos"] = await pool.fetchval("SELECT count(*) FROM push_subs")
     out["robo_configurado"] = bool(ROBO_KEY)
     out["api_football"] = bool(robo_rodada.chave())
+    import importlib.util
+    out["recorte"] = importlib.util.find_spec("rembg") is not None
     return out
 
 
