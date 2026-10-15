@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{# Notícia com jogador: recortado sobre cenário nosso (cor do clube, luz, palavra gigante). Sem recorte, foto inteira. #}
+{% block estilo %}
+.cena{position:absolute;inset:0;background:
+  radial-gradient(80% 60% at 74% 30%, color-mix(in srgb,var(--faixa) 88%,#fff 12%) 0%, color-mix(in srgb,var(--faixa) 62%,#000) 48%, #050505 100%)}
+.pontos{position:absolute;inset:0;opacity:.18;mix-blend-mode:overlay;
+  background-image:radial-gradient(rgba(255,255,255,.9) 1.4px, transparent 1.6px);background-size:14px 14px;
+  -webkit-mask-image:linear-gradient(200deg,#000 0%,transparent 60%);mask-image:linear-gradient(200deg,#000 0%,transparent 60%)}
+.feixes{position:absolute;inset:-200px;opacity:.20;mix-blend-mode:screen;
+  background:repeating-linear-gradient(112deg, transparent 0 140px, rgba(255,255,255,.6) 140px 146px, transparent 146px 300px)}
+.palavra{position:absolute;left:-20px;right:-20px;top:190px;z-index:1;font-weight:900;font-style:italic;text-transform:uppercase;text-align:left;
+  font-size:{{ [300, (2100 / ((d.palavra or 'x')|length))|int]|min }}px;line-height:.8;letter-spacing:-8px;white-space:nowrap;
+  color:transparent;-webkit-text-stroke:3px rgba(255,255,255,.26)}
+.jogador{position:absolute;z-index:3;right:-40px;bottom:300px;width:720px;height:1000px;object-fit:contain;object-position:bottom right;
+  filter:drop-shadow(0 30px 60px rgba(0,0,0,.6)) drop-shadow(-8px 0 0 color-mix(in srgb,var(--cor) 75%,transparent))}
+.foto-cheia{position:absolute;inset:0;background-size:cover;background-position:{{ d.foco or 'center 18%' }};z-index:0}
+.escudo{position:absolute;right:56px;top:48px;width:110px;height:110px;object-fit:contain;z-index:5;filter:drop-shadow(0 8px 20px rgba(0,0,0,.5))}
+.sombra{position:absolute;left:0;right:0;bottom:0;height:820px;z-index:4;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.62) 38%,#000 76%)}
+.barra{position:absolute;left:52px;bottom:{{ 395 if d.fatos else 300 }}px;width:120px;height:10px;background:var(--cor);z-index:6;transform:skewX(-18deg)}
+.bloco{position:absolute;left:52px;right:52px;bottom:{{ 250 if d.fatos else 140 }}px;z-index:6}
+.bloco .manchete{max-height:{{ 330 if d.fatos else 440 }}px}
+.linha-fina{font-weight:600;font-size:32px;line-height:1.2;margin-top:16px;max-width:900px;opacity:.9}
+.fatos{position:absolute;left:52px;right:52px;bottom:128px;z-index:6;display:flex}
+.fatos .f{flex:1;min-width:0;padding:0 18px;border-left:4px solid var(--cor)}
+.fatos b{display:block;font-weight:900;font-style:italic;font-size:60px;line-height:.9;letter-spacing:-1px}
+.fatos span{display:block;font-weight:600;font-size:21px;line-height:1.15;margin-top:6px;opacity:.8}
+.nome{position:absolute;right:56px;bottom:{{ 255 if d.fatos else 150 }}px;z-index:2;font-weight:800;font-style:italic;font-size:24px;letter-spacing:2px;text-transform:uppercase;opacity:.0}
+{% endblock %}
+{% block corpo %}
+{% if d.recorte %}
+<div class="cena"></div><div class="feixes"></div><div class="pontos"></div>
+{% if d.palavra %}<div class="palavra">{{ d.palavra }}</div>{% endif %}
+<img class="jogador" src="{{ d.recorte }}" alt="">
+{% else %}
+<div class="foto-cheia" style="background-image:url('{{ d.foto }}')"></div>
+{% endif %}
+<div class="sombra"></div>
+{% if d.escudo and d.recorte %}<img class="escudo" src="{{ d.escudo }}" alt="">{% endif %}
+{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+<div class="barra"></div>
+<div class="bloco">
+  <h1 class="manchete fit" data-max="{{ d.tamanho or 132 }}" data-min="64">{{ d.titulo|destaque }}</h1>
+  {% if d.linha_fina and not d.fatos %}<p class="linha-fina">{{ d.linha_fina }}</p>{% endif %}
+</div>
+{% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
+{% endblock %}

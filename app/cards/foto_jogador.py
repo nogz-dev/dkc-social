@@ -79,6 +79,38 @@ async def referencia_api(nome: str | None = None, jogador_id: int | None = None)
 
 
 # ----------------------------------------------------------- candidatas --
+async def candidatas_wikidata(nome: str, n: int = 2) -> list[dict]:
+    """Foto principal do jogador no Wikidata (propriedade P18): a foto "oficial" do verbete, em boa
+    resolução e com licença livre. É a fonte que mais acerta para jogador conhecido."""
+    if not nome:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=15, headers={"User-Agent": UA_WIKI}) as c:
+            r = await c.get("https://www.wikidata.org/w/api.php", params={
+                "action": "wbsearchentities", "search": nome, "language": "pt", "uselang": "pt",
+                "type": "item", "limit": "7", "format": "json"})
+            achados = r.json().get("search") or []
+            # só quem é do futebol (descrição fala em futebol/jogador/técnico)
+            chave = ("futebol", "football", "soccer", "futbol", "fútbol", "jogador", "treinador", "técnico", "manager", "coach")
+            ids = [a["id"] for a in achados if any(k in _sem_acento(a.get("description", "")) for k in chave)][:3]
+            if not ids:
+                return []
+            r = await c.get("https://www.wikidata.org/w/api.php", params={
+                "action": "wbgetentities", "ids": "|".join(ids), "props": "claims", "format": "json"})
+            ents = r.json().get("entities") or {}
+    except Exception:
+        return []
+    out = []
+    for i in ids:
+        for cl in ((ents.get(i) or {}).get("claims") or {}).get("P18", [])[:n]:
+            arq = (((cl.get("mainsnak") or {}).get("datavalue") or {}).get("value") or "")
+            if not arq:
+                continue
+            url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + arq.replace(" ", "_") + "?width=1600"
+            out.append({"url": url, "credito": "Foto: Wikimedia Commons", "origem": "wikidata"})
+    return out[:n]
+
+
 async def candidatas_wikimedia(nome: str, n: int = 6) -> list[dict]:
     if not nome:
         return []
@@ -97,7 +129,7 @@ async def candidatas_wikimedia(nome: str, n: int = 6) -> list[dict]:
         info = (p.get("imageinfo") or [{}])[0]
         if sobrenome not in _sem_acento(p.get("title", "")) or info.get("mime") not in ("image/jpeg", "image/png"):
             continue
-        if (info.get("width") or 0) < 700:
+        if (info.get("width") or 0) < 600:
             continue
         meta = info.get("extmetadata") or {}
         autor = re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", ""))[:60].strip()
@@ -208,7 +240,7 @@ async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id
             ref_bytes = None
     cands, vistos = [], set()
     for n in nomes[:2]:
-        for cnd in await candidatas_wikimedia(n) + await candidatas_web(n, clube):
+        for cnd in await candidatas_wikidata(n) + await candidatas_wikimedia(n) + await candidatas_web(n, clube):
             if cnd["url"] not in vistos:
                 vistos.add(cnd["url"])
                 cands.append(cnd)

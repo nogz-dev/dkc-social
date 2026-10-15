@@ -205,12 +205,13 @@ function atualizarLote() {
 }
 
 /* ------------------------------------------------------------ ações */
-async function aprovar(id, agendarIso) {
+const horaCurta = (iso) => new Date(iso).toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+async function aprovar(id, agendarIso, agora = false) {
   const p = S.posts.find((x) => x.id === id) || S.atual;
   if (p && !p.perfil) { toast("Esse post não tem perfil. Sincronize os perfis em Ajustes.", true); return; }
   try {
-    await api(`/api/posts/${id}/aprovar`, { method: "POST", json: { agendar_para: agendarIso || null } });
-    toast(agendarIso ? "Aprovado e agendado" : "Aprovado, enviando para o Instagram");
+    const r = await api(`/api/posts/${id}/aprovar`, { method: "POST", json: { agendar_para: agendarIso || null, agora } });
+    toast(r.sai_em ? `Aprovado · sai ${horaCurta(r.sai_em)}` : "Aprovado, enviando para o Instagram agora");
     fecharDetalhe(); S.sel.delete(id); carregar();
   } catch (err) { toast(err.message, true); carregar(); }
 }
@@ -218,11 +219,12 @@ async function aprovar(id, agendarIso) {
 async function aprovarLote() {
   const ids = [...S.sel];
   if (!ids.length) return;
-  if (!confirm(`Aprovar e publicar agora ${ids.length} post(s)?`)) return;
+  if (!confirm(`Aprovar ${ids.length} post(s)? Eles entram na fila, um a cada horário (:00 e :30).`)) return;
   try {
     const r = await api("/api/posts/aprovar-lote", { method: "POST", json: { ids } });
-    const ok = r.resultados.filter((x) => x.ok).length;
-    toast(`${ok} de ${ids.length} aprovados`);
+    const oks = r.resultados.filter((x) => x.ok);
+    const ult = oks.map((x) => x.sai_em).filter(Boolean).sort().pop();
+    toast(`${oks.length} de ${ids.length} aprovados${ult ? ` · o último sai ${horaCurta(ult)}` : ""}`);
   } catch (err) { toast(err.message, true); }
   S.sel.clear(); carregar();
 }
@@ -268,7 +270,13 @@ async function abrirDetalhe(id) {
   if (p.status === "pendente" || p.status === "erro") {
     f.innerHTML = `<button class="btn danger" id="bRecusar">${ico("i-x")}Recusar</button>
       <button class="btn" id="bSalvar">Salvar texto</button>
-      <button class="btn primary wide" id="bAprovar">${ico("i-check")}<span id="bAprovarTxt">Aprovar e publicar agora</span></button>`;
+      <button class="btn" id="bJa" title="Fura a fila: publica agora (notícia urgente)">Publicar já</button>
+      <button class="btn primary wide" id="bAprovar">${ico("i-check")}<span id="bAprovarTxt">Aprovar (entra na fila)</span></button>`;
+    api("/api/fila/proximo").then((r) => { const t = $("#bAprovarTxt"); if (t && !$("#dAgenda").value) t.textContent = r.sai_em ? `Aprovar · sai ${horaCurta(r.sai_em)}` : "Aprovar · sai agora"; }).catch(() => {});
+    $("#bJa").onclick = async () => {
+      if ((p.legenda !== $("#dLegenda").value || p.titulo !== $("#dTitulo").value) && !(await salvarEdicao(p.id))) return;
+      aprovar(p.id, null, true);
+    };
     $("#bRecusar").onclick = () => recusar(p.id);
     $("#bSalvar").onclick = async () => { if (await salvarEdicao(p.id)) { toast("Texto salvo"); carregar(); } };
     $("#bAprovar").onclick = async () => {

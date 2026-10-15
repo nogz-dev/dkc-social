@@ -33,7 +33,7 @@ from . import pauta, publora, webpush
 from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
 from .robos import resultados as robo_resultados
-from .cards import foto_jogador, fotos
+from .cards import clubes, foto_jogador, fotos
 from .cards.render import MODELOS, renderizador
 
 log = logging.getLogger("dkc")
@@ -1128,43 +1128,61 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     # foto: só jogador conferido (API-Football + busca + checagem por IA). Nunca imagem de matéria/arte de outro canal.
     foto, credito = None, None
     try:
-        fv = await foto_jogador.foto_verificada(post.get("pessoa_foto"), post.get("clube_foto"))
+        fv = await foto_jogador.foto_verificada(post.get("pessoa_foto"), post.get("clube_foto") or post.get("clube"))
     except Exception:
         log.exception("[NOTICIAS] foto do jogador")
         fv = None
     if fv:
         foto, credito = fv["url"], fv["credito"]
     urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
-    dados = {
-        "foto": foto, "credito_foto": credito, "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
+    base_dados = {
+        "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
         "tag2": post.get("tag2"), "titulo": post["titulo_card"][:90],
         "linha_fina": post.get("linha_fina"), "fatos": (post.get("fatos") or [])[:4],
     }
-    if not foto:
-        dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+    # escudos oficiais (API-Football) para os cards sem jogador e para a cor do cenário
+    jogo = post.get("jogo") if isinstance(post.get("jogo"), dict) else {}
+    esc_clube, esc_casa, esc_fora = await asyncio.gather(
+        clubes.escudo(post.get("clube") or post.get("clube_foto")),
+        clubes.escudo(jogo.get("casa")) if jogo.get("casa") else asyncio.sleep(0),
+        clubes.escudo(jogo.get("fora")) if jogo.get("fora") else asyncio.sleep(0),
+    )
+    palavra = (post.get("palavra") or "").strip().upper()[:11] or None
+
+    def montar(com_foto: bool) -> dict:
+        """Escolhe o formato do card: jogador recortado › confronto › clube › editoria."""
+        d = dict(base_dados)
+        if com_foto and foto:
+            d.update(foto=foto, credito_foto=credito, palavra=palavra or ((post.get("pessoa_foto") or "").split() or [""])[-1].upper()[:11] or None)
+            if esc_clube:
+                d["escudo"] = esc_clube["logo"]
+            return {"modelo": "destaque", "dados": d}
+        if esc_casa and esc_fora:
+            d.update(casa=jogo.get("casa"), fora=jogo.get("fora"), escudo_casa=esc_casa["logo"], escudo_fora=esc_fora["logo"],
+                     quando=(jogo.get("quando") or "")[:24] or None)
+            return {"modelo": "confronto", "dados": d}
+        if esc_clube:
+            d["escudo"] = esc_clube["logo"]
+            return {"modelo": "clube", "dados": d}
+        ed = "urgente" if urgente else (post.get("editoria") or "outro")
+        d.update(editoria=ed, palavra=palavra)
+        return {"modelo": "editorial", "dados": d}
+
     pedido = {
         "perfil": None, "linha": "noticia", "titulo": titulo_assunto[:200], "legenda": legenda,
         "fonte": post.get("fonte_nome") or fontes[0]["fonte"],
         "fonte_urls": [f["url"] for f in fontes],
-        "slides": [{"modelo": "noticia", "dados": dados}],
+        "slides": [montar(True)],
         "aviso": ("🚨 URGENTE · " if urgente else "📰 ") + "notícia para aprovar",
     }
     try:
         pid, _av = await criar_post_de_slides(pedido, "robo")
     except HTTPException as e:
-        if foto and e.status_code == 422:  # foto da matéria não baixou: tenta foto livre, senão sai sem foto
-            dados["foto"], dados["credito_foto"] = None, None
-            dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
-            try:
-                pid, _av = await criar_post_de_slides(pedido, "robo")
-            except HTTPException as e2:
-                if e2.status_code != 422:
-                    raise
-                dados["foto"], dados["credito_foto"] = None, None
-                dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
-                pid, _av = await criar_post_de_slides(pedido, "robo")
-        else:
+        if not (foto and e.status_code == 422):
             raise
+        # a foto não baixou: monta o card sem jogador (escudo/confronto/editoria)
+        pedido["slides"] = [montar(False)]
+        pid, _av = await criar_post_de_slides(pedido, "robo")
     await pool.execute("UPDATE assuntos SET status='postado', post_id=$2, postado_em=now() WHERE id=$1", aid, pid)
     if problemas:
         await evento(pid, "checagem_legenda", "; ".join(problemas))
@@ -1268,27 +1286,86 @@ async def editar(pid: uuid.UUID, body: EditarIn, _=Depends(exige_login)):
 
 
 class AprovarIn(BaseModel):
-    agendar_para: Optional[datetime] = None  # vazio = publicar agora
+    agendar_para: Optional[datetime] = None  # vazio = próximo horário livre da fila
+    agora: bool = False  # "Publicar já": fura a fila (notícia urgente)
 
 
-async def _aprovar_um(pid: uuid.UUID, agendar_para: Optional[datetime], base: str) -> dict:
-    # trava otimista: só sai de pendente/erro uma vez, mesmo com 2 aparelhos aprovando juntos
-    row = await pool.fetchrow(
-        "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2 "
-        "WHERE id=$1 AND status IN ('pendente','erro') RETURNING id",
-        pid, agendar_para,
+# ---- fila de publicação: um post por horário, em horários previsíveis ------------------------
+# Aprovou sem horário escolhido: entra no próximo horário livre (:00 ou :30), com no mínimo
+# POSTS_INTERVALO_MIN entre um post e outro, dentro da janela (Bahia). Se a fila estiver vazia e o
+# último post saiu há mais que o intervalo, sai na hora. Resultado de jogo não passa pela fila.
+INTERVALO_MIN = int(os.getenv("POSTS_INTERVALO_MIN", "30"))
+JANELA_INI_H = int(os.getenv("POSTS_JANELA_INICIO", "7"))
+JANELA_FIM_H = int(os.getenv("POSTS_JANELA_FIM", "23"))  # último horário: FIM:30
+BRT = timezone(timedelta(hours=-3))
+_fila_lock = asyncio.Lock()
+
+
+def _encaixar(t: datetime) -> datetime:
+    """Arredonda para cima até o próximo :00/:30 (Bahia) e respeita a janela do dia."""
+    b = t.astimezone(BRT)
+    passo = 30
+    resto = (b.minute % passo) * 60 + b.second + b.microsecond / 1e6
+    if resto:
+        b = b + timedelta(seconds=passo * 60 - resto)
+    b = b.replace(second=0, microsecond=0)
+    if b.hour < JANELA_INI_H:
+        b = b.replace(hour=JANELA_INI_H, minute=0)
+    elif b.hour > JANELA_FIM_H or (b.hour == JANELA_FIM_H and b.minute > 30):
+        b = (b + timedelta(days=1)).replace(hour=JANELA_INI_H, minute=0)
+    return b.astimezone(timezone.utc)
+
+
+async def proximo_horario(agora: Optional[datetime] = None) -> Optional[datetime]:
+    """None = pode sair agora; senão, o horário em que o post entra."""
+    agora = agora or datetime.now(timezone.utc)
+    ultimo = await pool.fetchval(
+        "SELECT max(t) FROM ("
+        " SELECT agendar_para AS t FROM posts WHERE status IN ('agendado','publicando') AND agendar_para IS NOT NULL"
+        " UNION ALL SELECT decidido_em FROM posts WHERE status='publicando' AND agendar_para IS NULL AND linha<>'resultado'"
+        " UNION ALL SELECT publicado_em FROM posts WHERE status='publicado' AND linha<>'resultado'"
+        "   AND publicado_em > now() - interval '6 hours'"
+        ") x"
     )
+    intervalo = timedelta(minutes=INTERVALO_MIN)
+    b = agora.astimezone(BRT)
+    na_janela = (JANELA_INI_H <= b.hour < JANELA_FIM_H) or (b.hour == JANELA_FIM_H and b.minute <= 30)
+    if na_janela and (ultimo is None or ultimo + intervalo <= agora):
+        return None
+    base = max(agora + timedelta(minutes=2), (ultimo + intervalo) if ultimo else agora)
+    return _encaixar(base)
+
+
+async def _aprovar_um(pid: uuid.UUID, agendar_para: Optional[datetime], base: str, agora: bool = False) -> dict:
+    async with _fila_lock:  # dois aprovados juntos não pegam o mesmo horário
+        if agendar_para is None and not agora:
+            linha = await pool.fetchval("SELECT linha FROM posts WHERE id=$1", pid)
+            if linha != "resultado":
+                agendar_para = await proximo_horario()
+        # trava otimista: só sai de pendente/erro uma vez, mesmo com 2 aparelhos aprovando juntos
+        row = await pool.fetchrow(
+            "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2 "
+            "WHERE id=$1 AND status IN ('pendente','erro') RETURNING id",
+            pid, agendar_para,
+        )
     if not row:
         return {"id": str(pid), "ok": False, "erro": "já decidido em outro aparelho"}
     asyncio.create_task(publicar_no_publora(pid, base))
-    return {"id": str(pid), "ok": True}
+    return {"id": str(pid), "ok": True, "sai_em": agendar_para.isoformat() if agendar_para else None}
+
+
+@app.get("/api/fila/proximo")
+async def fila_proximo(_=Depends(exige_login)):
+    t = await proximo_horario()
+    return {"sai_em": t.isoformat() if t else None, "intervalo_min": INTERVALO_MIN}
 
 
 @app.post("/api/posts/{pid}/aprovar")
 async def aprovar(pid: uuid.UUID, body: AprovarIn, request: Request, _=Depends(exige_login)):
     if body.agendar_para and body.agendar_para <= datetime.now(timezone.utc) + timedelta(minutes=2):
         body.agendar_para = None
-    res = await _aprovar_um(pid, body.agendar_para, base_publica(request))
+        body.agora = True
+    res = await _aprovar_um(pid, body.agendar_para, base_publica(request), body.agora)
     if not res["ok"]:
         raise HTTPException(409, res["erro"])
     return res

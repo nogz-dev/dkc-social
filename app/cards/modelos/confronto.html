@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{# Notícia de jogo sem foto de jogador: os dois escudos frente a frente, cada lado na cor do clube. #}
+{% block estilo %}
+.lado-a,.lado-b{position:absolute;top:0;bottom:0;width:62%}
+.lado-a{left:0;clip-path:polygon(0 0,100% 0,62% 100%,0 100%);
+  background:radial-gradient(90% 60% at 30% 32%, color-mix(in srgb,{{ d.cor_casa or '#1e3a8a' }} 92%,#fff 8%), color-mix(in srgb,{{ d.cor_casa or '#1e3a8a' }} 55%,#000) 60%, #050505)}
+.lado-b{right:0;clip-path:polygon(38% 0,100% 0,100% 100%,0 100%);
+  background:radial-gradient(90% 60% at 70% 32%, color-mix(in srgb,{{ d.cor_fora or '#7f1d1d' }} 92%,#fff 8%), color-mix(in srgb,{{ d.cor_fora or '#7f1d1d' }} 55%,#000) 60%, #050505)}
+.risco{position:absolute;left:50%;top:-40px;bottom:-40px;width:14px;background:var(--cor);transform:translateX(-50%) rotate(14.5deg);z-index:2;box-shadow:0 0 40px color-mix(in srgb,var(--cor) 60%,transparent)}
+.feixes{position:absolute;inset:-200px;opacity:.14;mix-blend-mode:screen;z-index:1;
+  background:repeating-linear-gradient(104deg, transparent 0 120px, rgba(255,255,255,.6) 120px 126px, transparent 126px 260px)}
+.esc{position:absolute;top:200px;width:380px;height:380px;object-fit:contain;z-index:3;filter:drop-shadow(0 24px 40px rgba(0,0,0,.55))}
+.esc.a{left:60px}.esc.b{right:60px}
+.nm{position:absolute;top:600px;width:440px;z-index:3;font-weight:800;font-style:italic;font-size:44px;text-transform:uppercase;line-height:.95}
+.nm.a{left:60px}.nm.b{right:60px;text-align:right}
+.x{position:absolute;left:50%;top:330px;transform:translateX(-50%);z-index:4;font-weight:900;font-style:italic;font-size:150px;line-height:1;color:#fff;text-shadow:0 10px 40px rgba(0,0,0,.6)}
+.quando{position:absolute;left:50%;top:500px;transform:translateX(-50%);z-index:4;background:#000;color:#fff;font-weight:800;font-style:italic;font-size:38px;padding:8px 22px 6px;white-space:nowrap}
+.sombra{position:absolute;left:0;right:0;bottom:0;height:640px;z-index:4;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.75) 35%,#000 72%)}
+.bloco{position:absolute;left:52px;right:52px;bottom:{{ 250 if d.fatos else 140 }}px;z-index:6}
+.bloco .manchete{max-height:{{ 300 if d.fatos else 380 }}px}
+.fatos{position:absolute;left:52px;right:52px;bottom:128px;z-index:6;display:flex}
+.fatos .f{flex:1;min-width:0;padding:0 18px;border-left:4px solid var(--cor)}
+.fatos b{display:block;font-weight:900;font-style:italic;font-size:58px;line-height:.9}
+.fatos span{display:block;font-weight:600;font-size:21px;line-height:1.15;margin-top:6px;opacity:.8}
+{% endblock %}
+{% block corpo %}
+<div class="lado-a"></div><div class="lado-b"></div><div class="feixes"></div><div class="risco"></div>
+{% if d.escudo_casa %}<img class="esc a" src="{{ d.escudo_casa }}" alt="">{% endif %}
+{% if d.escudo_fora %}<img class="esc b" src="{{ d.escudo_fora }}" alt="">{% endif %}
+<div class="x">X</div>
+{% if d.quando %}<div class="quando">{{ d.quando }}</div>{% endif %}
+<div class="sombra"></div>
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+<div class="bloco"><h1 class="manchete fit" data-max="{{ d.tamanho or 118 }}" data-min="60">{{ d.titulo|destaque }}</h1></div>
+{% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
+{% endblock %}

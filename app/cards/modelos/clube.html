@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{# Notícia de clube sem foto de jogador: escudo gigante no cenário na cor do clube. #}
+{% block estilo %}
+.cena{position:absolute;inset:0;background:radial-gradient(85% 65% at 70% 30%, color-mix(in srgb,var(--faixa) 90%,#fff 10%) 0%, color-mix(in srgb,var(--faixa) 55%,#000) 50%, #040404 100%)}
+.listras{position:absolute;inset:0;opacity:.10;background:repeating-linear-gradient(90deg, rgba(255,255,255,.9) 0 70px, transparent 70px 140px);
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,transparent 70%);mask-image:linear-gradient(180deg,#000 0%,transparent 70%)}
+.esc-sombra{position:absolute;right:-230px;top:20px;width:1000px;height:1000px;object-fit:contain;z-index:1;opacity:.16;filter:grayscale(1) brightness(3);transform:rotate(-8deg)}
+.esc{position:absolute;left:50%;top:170px;transform:translateX(-50%);width:430px;height:430px;object-fit:contain;z-index:3;filter:drop-shadow(0 30px 50px rgba(0,0,0,.55))}
+.sombra{position:absolute;left:0;right:0;bottom:0;height:720px;z-index:4;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72) 36%,#000 74%)}
+.bloco{position:absolute;left:52px;right:52px;bottom:{{ 250 if d.fatos else 140 }}px;z-index:6}
+.bloco .manchete{max-height:{{ 320 if d.fatos else 420 }}px}
+.linha-fina{font-weight:600;font-size:32px;line-height:1.2;margin-top:16px;max-width:900px;opacity:.9}
+.fatos{position:absolute;left:52px;right:52px;bottom:128px;z-index:6;display:flex}
+.fatos .f{flex:1;min-width:0;padding:0 18px;border-left:4px solid var(--cor)}
+.fatos b{display:block;font-weight:900;font-style:italic;font-size:58px;line-height:.9}
+.fatos span{display:block;font-weight:600;font-size:21px;line-height:1.15;margin-top:6px;opacity:.8}
+{% endblock %}
+{% block corpo %}
+<div class="cena"></div><div class="listras"></div>
+{% if d.escudo %}<img class="esc-sombra" src="{{ d.escudo }}" alt=""><img class="esc" src="{{ d.escudo }}" alt="">{% endif %}
+<div class="sombra"></div>
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+<div class="bloco">
+  <h1 class="manchete fit" data-max="{{ d.tamanho or 128 }}" data-min="60">{{ d.titulo|destaque }}</h1>
+  {% if d.linha_fina and not d.fatos %}<p class="linha-fina">{{ d.linha_fina }}</p>{% endif %}
+</div>
+{% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
+{% endblock %}

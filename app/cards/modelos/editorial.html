@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{# Notícia sem jogador nem clube (ex.: regulação das apostas): cada editoria tem cor e ícone próprios. #}
+{% set P = {
+  'apostas':  {'a':'#f5a524','b':'#2a1702','ic':'balanca'},
+  'mercado':  {'a':'#2fd27a','b':'#03190d','ic':'setas'},
+  'urgente':  {'a':'#ff3b3b','b':'#220404','ic':'alerta'},
+  'lesao':    {'a':'#ff5c7a','b':'#22050c','ic':'cruz'},
+  'tecnico':  {'a':'#4f8bff','b':'#050d24','ic':'prancheta'},
+  'selecao':  {'a':'#ffd400','b':'#05230f','ic':'estrela'},
+  'jogo':     {'a':'#38d0ff','b':'#031a24','ic':'bola'},
+  'polemica': {'a':'#c56bff','b':'#14051f','ic':'alerta'},
+  'outro':    {'a':'#95ff50','b':'#0b1407','ic':'bola'},
+} %}
+{% set e = P.get(d.editoria or 'outro', P['outro']) %}
+{% block estilo %}
+:root{--acc:{{ e.a }};--fundo:{{ e.b }}}
+body{background:var(--fundo)}
+.cena{position:absolute;inset:0;background:
+  radial-gradient(70% 55% at 78% 22%, color-mix(in srgb,var(--acc) 55%,var(--fundo)) 0%, var(--fundo) 60%, #000 100%)}
+.diag{position:absolute;inset:-300px;opacity:.10;background:repeating-linear-gradient(135deg, var(--acc) 0 2px, transparent 2px 46px)}
+.faixa-grande{position:absolute;right:-180px;top:120px;width:760px;height:760px;border-radius:50%;
+  background:radial-gradient(circle, color-mix(in srgb,var(--acc) 40%,transparent) 0%, transparent 65%)}
+.icone{position:absolute;right:70px;top:150px;width:470px;height:470px;z-index:2;color:var(--acc);opacity:.95;filter:drop-shadow(0 20px 50px color-mix(in srgb,var(--acc) 45%,transparent))}
+.palavra{position:absolute;left:-14px;top:620px;z-index:1;font-weight:900;font-style:italic;text-transform:uppercase;white-space:nowrap;
+  font-size:{{ [250, (1900 / ((d.palavra or 'x')|length))|int]|min }}px;line-height:.8;letter-spacing:-6px;color:transparent;-webkit-text-stroke:3px color-mix(in srgb,var(--acc) 45%,transparent)}
+.fita span{background:var(--acc)!important;color:#0a0a0a!important}
+.manchete em{color:#0a0a0a!important;background:linear-gradient(transparent 17%,var(--acc) 17%,var(--acc) 95%,transparent 95%)!important}
+.sombra{position:absolute;left:0;right:0;bottom:0;height:640px;z-index:3;background:linear-gradient(180deg,transparent,rgba(0,0,0,.6) 40%,#000 80%)}
+.bloco{position:absolute;left:52px;right:52px;bottom:{{ 250 if d.fatos else 140 }}px;z-index:6}
+.bloco .manchete{max-height:{{ 340 if d.fatos else 440 }}px}
+.linha-fina{font-weight:600;font-size:32px;line-height:1.2;margin-top:16px;max-width:900px;opacity:.9}
+.fatos{position:absolute;left:52px;right:52px;bottom:128px;z-index:6;display:flex}
+.fatos .f{flex:1;min-width:0;padding:0 18px;border-left:4px solid var(--acc)}
+.fatos b{display:block;font-weight:900;font-style:italic;font-size:58px;line-height:.9;color:var(--acc)}
+.fatos span{display:block;font-weight:600;font-size:21px;line-height:1.15;margin-top:6px;opacity:.82}
+{% endblock %}
+{% block corpo %}
+<div class="cena"></div><div class="diag"></div><div class="faixa-grande"></div>
+<svg class="icone" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+{% if e.ic == 'balanca' %}
+  <path d="M50 14v70M30 84h40M18 30h64M50 22l0 8"/><path d="M18 30 8 56h20zM82 30l-10 26h20z"/><path d="M8 56a10 7 0 0 0 20 0M72 56a10 7 0 0 0 20 0"/>
+{% elif e.ic == 'setas' %}
+  <path d="M14 34h62M62 20l14 14-14 14"/><path d="M86 66H24M38 52 24 66l14 14"/>
+{% elif e.ic == 'alerta' %}
+  <path d="M50 12 92 86H8z"/><path d="M50 40v22"/><circle cx="50" cy="73" r="2.5" fill="currentColor"/>
+{% elif e.ic == 'cruz' %}
+  <rect x="14" y="14" width="72" height="72" rx="14"/><path d="M50 32v36M32 50h36"/>
+{% elif e.ic == 'prancheta' %}
+  <rect x="20" y="16" width="60" height="74" rx="6"/><path d="M38 12h24v10H38z"/><circle cx="38" cy="44" r="5"/><path d="M58 40l8 8M66 40l-8 8"/><path d="M40 70c8-14 16-14 24-2"/><path d="M60 64l4 4 4-6"/>
+{% elif e.ic == 'estrela' %}
+  <path d="M50 10l11 25 27 3-20 18 6 27-24-14-24 14 6-27-20-18 27-3z"/>
+{% else %}
+  <circle cx="50" cy="50" r="38"/><path d="M50 30l14 10-5 17H41l-5-17z"/><path d="M50 30V12M64 40l17-6M59 57l10 15M41 57 31 72M36 40l-17-6"/>
+{% endif %}
+</svg>
+{% if d.palavra %}<div class="palavra">{{ d.palavra }}</div>{% endif %}
+<div class="sombra"></div>
+<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+<div class="bloco">
+  <h1 class="manchete fit" data-max="{{ d.tamanho or 128 }}" data-min="60">{{ d.titulo|destaque }}</h1>
+  {% if d.linha_fina and not d.fatos %}<p class="linha-fina">{{ d.linha_fina }}</p>{% endif %}
+</div>
+{% if d.fatos %}<div class="fatos">{% for f in d.fatos[:4] %}<div class="f"><b>{{ f.n }}</b><span>{{ f.l }}</span></div>{% endfor %}</div>{% endif %}
+{% endblock %}

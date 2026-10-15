@@ -325,6 +325,10 @@ Devolva SOMENTE um objeto JSON:
  "legenda": a legenda completa (regras abaixo),
  "pessoa_foto": nome completo do jogador/técnico protagonista para buscar foto, ou null,
  "clube_foto": clube atual dessa pessoa, ou null,
+ "clube": clube protagonista da notícia (nome curto, ex.: "Flamengo", "Real Madrid"), ou null,
+ "jogo": se a notícia é sobre UM jogo específico: {"casa": time mandante, "fora": time visitante, "quando": ex. "Hoje · 21h30" (só se a fonte disser)}; senão null,
+ "editoria": "apostas" (regulação/mercado de apostas) | "mercado" (transferências) | "jogo" | "lesao" | "tecnico" | "selecao" | "polemica" | "outro",
+ "palavra": UMA palavra curta (até 10 letras, sem acento se possível) para o grafismo gigante do card: sobrenome do protagonista, nome do clube ou o tema (ex.: "BETS", "MERCADO"); ou null,
  "fonte_nome": nome do veículo que deu a informação principal,
  "urgente": true só se for bomba de nota 9–10
 }
