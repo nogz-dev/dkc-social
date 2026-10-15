@@ -84,12 +84,21 @@ def _min(g: dict) -> str:
     return f"{g['min']}+{g['extra']}'" if g.get("extra") else f"{g['min']}'"
 
 
-def _autor(g: dict) -> str:
-    nome = g["jogador"] or "Gol"
-    # "V. Junior" → "Junior": no card fica o sobrenome, como o torcedor fala
-    partes = nome.split()
+def nome_camisa(nome: str) -> str:
+    """Nome como o torcedor fala, não o de registro.
+    "V. Junior" → "Junior"; "Reinier Jesus Carvalho" → "Reinier"; "Thiago Borbas" fica."""
+    partes = (nome or "").split()
+    if not partes:
+        return "Gol"
     if len(partes) > 1 and partes[0].endswith("."):
-        nome = " ".join(partes[1:])
+        return " ".join(partes[1:])
+    if len(partes) >= 3:  # nome completo de registro (comum nos brasileiros): fica o primeiro
+        return partes[0]
+    return " ".join(partes)
+
+
+def _autor(g: dict) -> str:
+    nome = nome_camisa(g["jogador"])
     suf = " (contra)" if "Own" in g["tipo"] else (" (pên.)" if "Penalty" in g["tipo"] else "")
     return f"{nome} {_min(g)}{suf}"
 

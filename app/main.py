@@ -350,7 +350,7 @@ async def perfil_padrao() -> Optional[int]:
 async def criar_post(
     *, perfil_id: Optional[int], linha: str, titulo: str, legenda: str, fonte: str,
     origem: str, midias: list[tuple[str, bytes]], sugerido_para: Optional[datetime] = None,
-    fonte_urls: Optional[list] = None, aviso: Optional[str] = None,
+    fonte_urls: Optional[list] = None, aviso: Optional[str] = None, sem_auto: bool = False,
 ) -> uuid.UUID:
     if linha not in LINHAS:
         linha = "manual"
@@ -385,6 +385,10 @@ async def criar_post(
             )
     await evento(pid, "criado", origem)
     # regra: só RESULTADO de jogo (vindo de robô/Claude) pode sair sem aprovação
+    if linha == "resultado" and sem_auto:
+        # resultado incompleto (sem foto boa): não sai sozinho, vai para a fila
+        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80], "⚠️ Resultado sem foto: confira antes de publicar"))
+        return pid
     if linha == "resultado" and origem != "manual" and await auto_resultado_ligado():
         res = await _aprovar_um(pid, None, base_publica())
         await evento(pid, "auto_aprovado", json.dumps(res))
@@ -580,7 +584,8 @@ async def _perfil(perfil_id: Optional[int], handle: Optional[str]) -> tuple[Opti
     return (r["id"], r["handle"]) if r else (None, None)
 
 
-async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: str) -> tuple[list[tuple[str, bytes]], list[str]]:
+async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: str,
+                            foto_opcional: bool = False) -> tuple[list[tuple[str, bytes]], list[str]]:
     if not slides:
         raise HTTPException(400, "informe ao menos um slide")
     if len(slides) > 10:
@@ -592,7 +597,10 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
         try:
             img, av = await renderizador.png(sl["modelo"], sl.get("dados") or {}, handle, fonte)
         except fotos.FotoErro as e:
-            raise HTTPException(422, f"slide {i}: {e}")
+            if not foto_opcional:
+                raise HTTPException(422, f"slide {i}: {e}")
+            dados = dict(sl.get("dados") or {}, foto=None, credito_foto=None)
+            img, av = await renderizador.png(sl["modelo"], dados, handle, fonte)
         midias.append(("image/jpeg", img))
         avisos += [f"slide {i}: {a}" for a in av]
     return midias, avisos
@@ -605,7 +613,8 @@ def _links(body: dict) -> list:
 
 async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
     perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
-    midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""))
+    midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""),
+                                             foto_opcional=bool(body.get("foto_opcional")))
     sug = body.get("sugerido_para")
     if isinstance(sug, str) and sug:
         try:
@@ -614,7 +623,8 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
             sug = None
     pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
                            legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
-                           midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"))
+                           midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"),
+                           sem_auto=any("sem foto" in a for a in avisos))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos

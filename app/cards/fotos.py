@@ -37,6 +37,21 @@ def _host_publico(host: str) -> bool:
     return True
 
 
+def parece_generica(im: Image.Image) -> bool:
+    """Detecta imagem-placeholder (ícone de câmera cinza, 'image not available'):
+    quase sem cor e com poucos tons. Foto de verdade tem cor e textura."""
+    from PIL import ImageStat
+    peq = im.convert("RGB")
+    peq.thumbnail((96, 96))
+    hsv = peq.convert("HSV")
+    sat = ImageStat.Stat(hsv).mean[1]           # 0–255
+    tons = len(set(peq.quantize(colors=64).getdata()))
+    lum_std = ImageStat.Stat(peq.convert("L")).stddev[0]
+    if peq.width < 200 and im.width < 300:      # miniatura minúscula não serve de fundo
+        return True
+    return (sat < 18 and tons < 40) or lum_std < 12
+
+
 async def baixar(url: str, max_lado: int = 1600) -> tuple[bytes, str]:
     """Baixa e normaliza a imagem. Retorna (bytes, mime)."""
     if url.startswith("data:image/"):
@@ -70,6 +85,8 @@ async def baixar(url: str, max_lado: int = 1600) -> tuple[bytes, str]:
         im.load()
     except Exception:
         raise FotoErro(f"o arquivo não é uma imagem válida: {url[:80]}")
+    if max_lado >= 1000 and parece_generica(im):
+        raise FotoErro("a imagem é um aviso genérico de 'foto indisponível', não uma foto")
     tem_alfa = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
     im = im.convert("RGBA" if tem_alfa else "RGB")
     im.thumbnail((max_lado, max_lado))

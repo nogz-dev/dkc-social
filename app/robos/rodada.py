@@ -197,5 +197,6 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "titulo": f"Rodada do dia · {data_curta} · {total} jogos",
         "legenda": legenda, "fonte": "API-Football",
         "sugerido_para": sug.isoformat(),
+        "foto_opcional": True,  # foto de estádio que não vier (ou vier genérica) não derruba o carrossel
         "slides": slides,
     }
