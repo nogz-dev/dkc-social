@@ -156,7 +156,7 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
     if modelo == "heroi":
         d["escudo_destaque_img"] = d.get("escudo_fora") if d.get("lado_destaque") == "fora" else d.get("escudo_casa")
     # jogador recortado sobre o nosso cenário
-    if d.get("foto") and (modelo in ("heroi", "destaque") or d.get("recortar")):
+    if d.get("foto") and not d.get("visual_ia") and (modelo in ("heroi", "destaque") or d.get("recortar")):
         d["recorte"] = await recorte.recortar(d["foto"])
         if not d["recorte"]:
             avisos.append("recorte do jogador falhou: foi usada a foto inteira")

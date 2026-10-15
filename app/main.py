@@ -622,30 +622,36 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     for i, sl in enumerate(slides, 1):
         if sl.get("modelo") not in MODELOS:
             raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
-    # arte pela OpenAI (todas as imagens), em paralelo; o que falhar cai no template próprio
-    artes: list = [None] * len(slides)
-    if openai_img.ativo():
-        marca = marca_de(handle)
-        async def _arte(i: int, sl: dict):
-            try:
-                artes[i] = await openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca)
-            except Exception as e:
-                log.warning("[ARTE] slide %d: %s", i + 1, e)
-                artes[i] = e
-        await asyncio.gather(*(_arte(i, sl) for i, sl in enumerate(slides)))
+    # visual pela OpenAI (manual da marca): ela cria cenário/tratamento da foto, o template escreve texto,
+    # placar, escudos e logo. O que falhar sai no template com a foto original.
+    visuais: list = [None] * len(slides)
+    marca = marca_de(handle)
+
+    async def _visual(i: int, sl: dict):
+        try:
+            visuais[i] = await openai_img.criar_visual(sl["modelo"], sl.get("dados") or {}, marca)
+        except Exception as e:
+            log.warning("[ARTE] slide %d: %s", i + 1, e)
+            visuais[i] = e
+    await asyncio.gather(*(_visual(i, sl) for i, sl in enumerate(slides) if openai_img.usa_visual(sl["modelo"], handle)))
     for i, sl in enumerate(slides, 1):
-        arte = artes[i - 1]
-        if isinstance(arte, tuple):
-            jpg, av_arte = arte
-            dd = sl.get("dados") or {}
-            img, av = await renderizador.png("arte", {
-                "foto": "data:image/jpeg;base64," + base64.b64encode(jpg).decode(),
-                "credito_foto": dd.get("credito_foto") if dd.get("foto") else None}, handle, fonte)
-            midias.append(("image/jpeg", img))
-            avisos += [f"slide {i}: {a}" for a in av_arte + av]
-            continue
-        if isinstance(arte, Exception):
-            avisos.append(f"slide {i}: arte da OpenAI não saiu ({str(arte)[:160]}): usado o template próprio")
+        vis = visuais[i - 1]
+        if isinstance(vis, tuple):
+            jpg, av_vis = vis
+            orig = sl.get("dados") or {}
+            cred = orig.get("credito_foto") if orig.get("foto") else None
+            dados = dict(orig, foto="data:image/jpeg;base64," + base64.b64encode(jpg).decode(), visual_ia=True,
+                         foco="center", palavra=None,
+                         credito_foto=" · ".join(x for x in (cred, "Arte digital") if x))
+            try:
+                img, av = await renderizador.png(sl["modelo"], dados, handle, fonte)
+                midias.append(("image/jpeg", img))
+                avisos += [f"slide {i}: {a}" for a in av_vis + av]
+                continue
+            except Exception as e:
+                avisos.append(f"slide {i}: visual da OpenAI não entrou no template ({str(e)[:120]})")
+        elif isinstance(vis, Exception):
+            avisos.append(f"slide {i}: visual da OpenAI não saiu ({str(vis)[:160]}): usado o template com a foto original")
         try:
             img, av = await renderizador.png(sl["modelo"], sl.get("dados") or {}, handle, fonte)
         except fotos.FotoErro as e:

@@ -99,14 +99,18 @@ referência; buscamos candidatas pelo nome (Wikimedia Commons e, com
 canal, boa para capa). Sem foto conferida: resultado vai para a fila (não sai
 sozinho) e notícia sai sem foto de jogador.
 
-## Imagens pela OpenAI (desde 15/10/2026)
+## Visual pela OpenAI + manual da marca (desde 15/10/2026)
 
-Toda imagem de card é criada pela OpenAI (`gpt-image-2`, variável `OPENAI_API_KEY`). O sistema entrega a informação:
-texto exato, placar, escudos e a foto conferida do jogador como referência (nunca arte de outro veículo).
-Antes de usar a arte, o Claude confere se todo texto e número está certo e se não há logo de emissora; se errar,
-a OpenAI refaz uma vez com a lista de erros. Reprovou de novo ou deu erro: o card sai no template próprio, com aviso.
-O rodapé (logo real, @ e fonte) é sempre carimbado por nós.
+Segue `brands/seu-tipster/brand-guidelines.md` (manual oficial do Nog). A API de imagens não tem memória: o manual
+(cores, identidade, direção de arte e o tipo de post) vai junto em cada pedido do @seutipster.app.
 
-Variáveis: `OPENAI_IMAGE_MODEL` (padrão `gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE`
-(`1088x1360`), `OPENAI_IMAGENS_DIA` (trava diária, padrão 400), `IMAGENS_OPENAI=0` desliga e volta aos templates.
-`/api/saude` mostra `imagens_openai`.
+- OpenAI (`gpt-image-2`, `OPENAI_API_KEY`): só o VISUAL — cenário, luz, textura e tratamento da foto real e
+  licenciada do jogador (rosto preservado). Nenhuma letra, número, escudo ou logo.
+- Renderizador próprio (templates): manchete, placar, estatísticas, data, horário, escudos e logotipo oficial.
+- Revisão pelo Claude: aprovada / necessita de correção (refaz 1x) / rejeitada. Falhou: template com a foto original + aviso.
+- Vale para noticia, destaque, jogador, resultado, heroi e rodada. Confronto, clube e editorial seguem só com escudos/tipografia.
+- Outros perfis não usam a OpenAI. Combinado mantido: resultado dos jogos principais com foto conferida sai sozinho
+  (chave "Resultado automático" em Ajustes desliga).
+
+Variáveis: `OPENAI_IMAGE_MODEL` (`gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE` (`1088x1360`),
+`OPENAI_IMAGENS_DIA` (trava, 400), `IMAGENS_OPENAI=0` desliga. `/api/saude` mostra `imagens_openai`.

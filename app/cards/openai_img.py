@@ -1,20 +1,25 @@
-"""Arte dos cards feita pela OpenAI (gpt-image-2).
+"""Visual dos cards feito pela OpenAI (gpt-image-2), seguindo o manual da marca.
 
-Divisão de trabalho (Nog, 15/10/2026): a OpenAI cria TODAS as imagens. Nós
-entregamos a informação (texto exato, placar, escudos, foto conferida do
-jogador) e conferimos o resultado:
+Divisão de trabalho (manual do Seu Tipster, 15/10/2026):
+- Claude: inteligência editorial, briefing e conferência.
+- OpenAI: geração e tratamento VISUAL (cenário, luz, textura, tratamento da
+  foto real do jogador). Nenhum texto, número, escudo ou logo sai da OpenAI.
+- Renderizador próprio (templates em app/cards/modelos): manchete, placar,
+  estatísticas, data, horário, escudos e logotipo oficial, sempre exatos.
 
-1. briefing(): monta o pedido de arte a partir dos dados do slide.
-2. A OpenAI cria a arte em 4:5 usando as referências (foto conferida do
-   jogador, escudos, logo da liga). Nunca mandamos arte de outro veículo.
-3. conferir(): o Claude olha a arte e confere se todo texto/número está
-   certo e se não apareceu logo de emissora ou texto inventado. Se errar,
-   pede de novo uma vez com a lista de erros.
-4. O rodapé com o logo real do perfil, @ e fonte é carimbado por nós (logo
-   desenhado por IA sai torto).
+Fluxo de cada slide:
+1. manual(): carrega brands/<marca>/brand-guidelines.md (a "memória" da
+   marca; a API de imagens não guarda nada entre pedidos).
+2. briefing(): pedido de arte com o manual, o tipo de post, a composição e as
+   áreas que precisam ficar livres para o texto.
+3. A OpenAI cria o visual 4:5. Se houver foto conferida e licenciada do
+   jogador, ela vai como referência para ser tratada (rosto preservado).
+4. conferir(): o Claude reprova se aparecer texto/letra/logo/escudo, rosto
+   deformado, pessoa diferente da foto, área de texto ocupada ou cara de IA
+   genérica. Reprovou: refaz uma vez com a lista de problemas.
+5. O visual aprovado vira a "foto" do template, que escreve todo o resto.
 
-Se a OpenAI falhar ou errar duas vezes, o card sai no template próprio
-(plano B) com aviso.
+Se falhar, o card sai no template com a foto original (plano B) e aviso.
 """
 from __future__ import annotations
 
@@ -26,7 +31,8 @@ import logging
 import os
 import re
 from datetime import date
-from typing import Any
+from functools import lru_cache
+from pathlib import Path
 
 import httpx
 from PIL import Image
@@ -41,6 +47,12 @@ TAMANHO = os.getenv("OPENAI_IMAGE_SIZE", "1088x1360")      # 4:5, múltiplos de 
 QUALIDADE = os.getenv("OPENAI_IMAGE_QUALITY", "high")
 LIMITE_DIA = int(os.getenv("OPENAI_IMAGENS_DIA", "400"))     # trava de segurança de custo
 MODELO_CONF = os.getenv("ARTE_MODELO_CONFERENCIA", "claude-sonnet-5-5")
+RAIZ = Path(__file__).resolve().parents[2]
+
+# templates que têm espaço para o visual (os outros são composições só de escudo/tipografia)
+COM_VISUAL = ("noticia", "resultado", "jogador", "rodada", "heroi", "destaque")
+# pasta do manual por @ do perfil
+MANUAIS = {"seutipster.app": "seu-tipster"}
 
 _sem = asyncio.Semaphore(int(os.getenv("OPENAI_PARALELO", "3")))
 _uso = {"dia": None, "n": 0}
@@ -58,154 +70,111 @@ def ativo() -> bool:
     return bool(chave()) and os.getenv("IMAGENS_OPENAI", "1") != "0"
 
 
+def usa_visual(modelo: str, handle: str | None) -> bool:
+    return ativo() and modelo in COM_VISUAL and (handle or "").lstrip("@").lower() in MANUAIS
+
+
 def status() -> dict:
     return {"ativo": ativo(), "modelo": MODELO, "hoje": _uso["n"] if _uso["dia"] == date.today() else 0,
-            "limite_dia": LIMITE_DIA}
+            "limite_dia": LIMITE_DIA, "perfis": list(MANUAIS)}
 
 
-def _limpo(t: Any) -> str:
+def _limpo(t) -> str:
     return re.sub(r"\s+", " ", str(t or "").replace("*", "")).strip()
 
 
-def _destaques(t: str) -> list[str]:
-    return [x.strip() for x in re.findall(r"\*([^*]+)\*", t or "") if x.strip()]
+# ----------------------------------------------------------------- manual --
+@lru_cache(maxsize=8)
+def _secoes(pasta: str) -> dict[str, str]:
+    arq = RAIZ / "brands" / pasta / "brand-guidelines.md"
+    if not arq.exists():
+        return {}
+    txt = re.sub(r"<!--.*?-->", "", arq.read_text(encoding="utf-8"), flags=re.S)
+    txt = re.sub(r"^# .*$", "", txt, flags=re.M)  # título do documento
+    partes = re.split(r"^## ", txt, flags=re.M)
+    return {p.split("\n", 1)[0].strip().upper(): p.split("\n", 1)[1].strip() if "\n" in p else "" for p in partes[1:]}
 
 
-# ------------------------------------------------------------- briefing --
-ESTILO = """Direção de arte (siga à risca):
-- Card vertical de Instagram 4:5 de um perfil brasileiro de futebol, no nível das grandes campanhas esportivas premium, com identidade própria (sem imitar nenhum canal): design editorial esportivo, moderno, impactante, acabamento profissional de designer humano, NADA com cara de "feito por IA" (sem brilho plástico, sem pele de cera, sem elementos derretidos ou deformados).
-- Tipografia: sans serif condensada pesada, itálica, caixa alta nas manchetes; hierarquia forte; uma ou duas palavras de destaque com marca-texto na cor da marca.
-- Cores: base escura quase preta {bg}, destaque da marca {cor} (use com moderação, em fitas/marca-texto/detalhes), e as cores do clube protagonista quando houver.
-- Grafismos de transmissão: faixas diagonais, fita adesiva com a etiqueta no topo à esquerda, granulado sutil de impressão, luz de estádio, profundidade.
-- Reserve os 150 pixels de baixo como uma faixa escura LIMPA, sem nenhum texto, logo ou elemento: o rodapé com a marca é colocado depois.
-- PROIBIDO: logo, marca d'água ou nome de qualquer emissora, portal ou outro perfil (TNT, ESPN, Globo, CazéTV, ge, etc.); logo de casa de aposta; texto que não esteja na lista abaixo; números inventados; @ de perfis; QR code.
-- Escreva SOMENTE os textos listados, exatamente como estão (acentos, nomes e números idênticos). Nenhum outro texto legível."""
+TIPO_POR_MODELO = {"rodada": "A. AGENDA", "noticia": "C. NOTÍCIAS", "destaque": "C. NOTÍCIAS",
+                   "jogador": "C. NOTÍCIAS", "heroi": "D. RESULTADOS", "resultado": "D. RESULTADOS"}
 
 
-def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list[str] | None = None) -> str:
-    linhas: list[str] = []
-    tag = " · ".join(x for x in (_limpo(d.get("tag")), _limpo(d.get("tag2"))) if x)
-    if tag:
-        linhas.append(f'Etiqueta (fita no topo): "{tag}"')
-    titulo = d.get("titulo") or ""
-    if titulo:
-        linhas.append(f'Manchete principal: "{_limpo(titulo)}"')
-        dest = _destaques(titulo)
-        if dest:
-            linhas.append("Palavras com marca-texto na cor da marca: " + ", ".join(f'"{x}"' for x in dest))
-    if d.get("palavra"):
-        linhas.append(f'Palavra gigante de fundo, vazada/contorno, atrás do jogador: "{_limpo(d["palavra"]).upper()}"')
-    if d.get("marca_dagua"):
-        linhas.append(f'Palavra gigante de fundo, só contorno: "{_limpo(d["marca_dagua"]).upper()}"')
-    if d.get("legenda_jogador"):
-        linhas.append(f'Linha pequena sob a manchete: "{_limpo(d["legenda_jogador"])}"')
+def manual(handle: str | None, modelo: str, pre_jogo: bool = False) -> str:
+    """Trechos do manual que valem para a arte: cores, identidade, direção de arte e o tipo de post."""
+    pasta = MANUAIS.get((handle or "").lstrip("@").lower())
+    s = _secoes(pasta) if pasta else {}
+    if not s:
+        return ""
+    pega = lambda prefixo: next((v for k, v in s.items() if k.startswith(prefixo)), "")
+    tipo_txt = ""
+    tipos = pega("5. TIPOS")
+    alvo = "B. PRÉ-JOGO" if pre_jogo else TIPO_POR_MODELO.get(modelo, "C. NOTÍCIAS")
+    m = re.search(r"^### " + re.escape(alvo) + r".*?(?=^### |\Z)", tipos, flags=re.M | re.S | re.I)
+    if m:
+        tipo_txt = m.group(0)
+    partes = [pega("CORES OFICIAIS"), pega("1. IDENTIDADE"), pega("2. DIREÇÃO DE ARTE"), tipo_txt]
+    return "\n\n".join(p for p in partes if p)
+
+
+# --------------------------------------------------------------- briefing --
+ZONAS = {
+    "noticia": "Sujeito principal na metade de cima. A metade de baixo (de 50% da altura até o fim) precisa ser escura, calma e sem detalhes: é onde entram manchete e dados.",
+    "destaque": "Jogador à direita, do peito para cima, ocupando a metade de cima. Metade de baixo escura e limpa para manchete e dados.",
+    "jogador": "Jogador em destaque na metade de cima, rosto nítido. Terço de baixo escuro e limpo para os dados.",
+    "resultado": "Clima de fim de jogo na metade de cima. A partir de 45% da altura, área escura e limpa: ali entram manchete, escudos e placar.",
+    "heroi": "Jogador à direita, grande, do quadril para cima. Metade esquerda e o terço de baixo escuros e limpos para manchete e placar.",
+    "rodada": "Atmosfera de estádio discreta e escura. Área central larga (de 20% a 90% da altura) bem escura, uniforme e sem detalhes: ali entra a lista de jogos.",
+}
+CANTO = "Canto superior esquerdo (300 x 140 px) e a faixa de baixo (150 px) sempre livres e escuros: etiqueta e rodapé entram ali."
+
+
+def briefing(modelo: str, d: dict, marca: dict, com_foto: bool, correcoes: list[str] | None = None) -> str:
+    pre_jogo = modelo == "resultado" and d.get("gols_casa") is None
+    clube = _limpo(d.get("fora") if d.get("lado_destaque") == "fora" else d.get("casa")) or _limpo((d.get("jogador") or {}).get("clube"))
+    assunto = _limpo(d.get("titulo")) or _limpo(d.get("tag"))
+    contexto = []
+    if assunto:
+        contexto.append(f"Assunto do post (só para inspirar o clima, NÃO escreva): {assunto}")
     if d.get("casa") and d.get("fora"):
-        if d.get("gols_casa") is not None and d.get("gols_fora") is not None:
-            linhas.append(f'Placar em destaque: "{_limpo(d["casa"])}" {d["gols_casa"]} x {d["gols_fora"]} "{_limpo(d["fora"])}" '
-                          f'(mandante à esquerda, visitante à direita, cada um com seu escudo)')
-            if d.get("autores_casa"):
-                linhas.append(f'Gols de {_limpo(d["casa"])} (lado esquerdo, letra pequena): ' + " · ".join(_limpo(x) for x in d["autores_casa"]))
-            if d.get("autores_fora"):
-                linhas.append(f'Gols de {_limpo(d["fora"])} (lado direito, letra pequena): ' + " · ".join(_limpo(x) for x in d["autores_fora"]))
-            if d.get("penaltis"):
-                linhas.append(f'Selo: "{_limpo(d["penaltis"])}"')
-        else:
-            linhas.append(f'Confronto: "{_limpo(d["casa"])}" x "{_limpo(d["fora"])}", horário "{_limpo(d.get("hora"))}" em destaque')
-            if d.get("info"):
-                linhas.append(f'Linha de informação: "{_limpo(d["info"])}"')
-    for f in (d.get("fatos") or [])[:4]:
-        linhas.append(f'Bloco de dado: número grande "{_limpo(f.get("n"))}" com legenda "{_limpo(f.get("l"))}"')
-    if d.get("data"):
-        linhas.append(f'Data: "{_limpo(d["data"])}"')
-    jogos = d.get("jogos") or []
-    if jogos:
-        linhas.append("Lista de jogos em tabela limpa, uma linha por jogo, horário à esquerda, escudos ao lado dos nomes:")
-        for j in jogos:
-            linhas.append(f'  - "{_limpo(j.get("hora"))}"  "{_limpo(j.get("casa"))}" x "{_limpo(j.get("fora"))}"')
-    if d.get("texto"):
-        linhas.append(f'Texto de apoio: "{_limpo(d["texto"])}"')
+        contexto.append(f"Partida: {_limpo(d['casa'])} x {_limpo(d['fora'])}" + (" (antes do jogo)" if pre_jogo else ""))
+    if clube:
+        contexto.append(f"Clube protagonista: {clube}. Use as cores desse clube na luz e no cenário, sem desenhar o escudo.")
+    if d.get("cor_faixa"):
+        contexto.append(f"Cor do clube protagonista: {d['cor_faixa']}")
 
-    cena = {
-        "heroi": "Composição herói: o jogador recortado e grande, à direita, sobre um cenário com a cor do clube, luz dramática de estádio; manchete à esquerda; placar num painel na parte de baixo.",
-        "resultado": "Composição de fim de jogo: placar gigante como protagonista, escudos grandes, faixa diagonal com a cor do clube vencedor.",
-        "jogador": "Composição de perfil de jogador: o jogador em destaque, faixa com a cor do clube, dados em blocos.",
-        "rodada": "Composição de agenda: lista de jogos legível, limpa e alinhada, com cara de grade de transmissão.",
-        "noticia": "Composição de notícia urgente: manchete enorme como protagonista, imagem de apoio coerente com o tema.",
-    }.get(modelo, "Composição de notícia esportiva.")
-
-    pessoa = ("Use a pessoa da imagem de referência do jogador como o jogador do card: mantenha o rosto, o corpo e a identidade "
-              "fiéis à foto (é uma fotografia real conferida). Não invente outra pessoa e não altere o rosto."
-              if any(r.startswith("foto do jogador") for r in refs) else
-              "Não desenhe nenhuma pessoa real reconhecível (nenhum jogador, técnico ou celebridade). Use tipografia, escudos, "
-              "estádio, bola, torcida desfocada sem rostos, texturas e grafismos.")
-    escudos = ("Reproduza os escudos das referências fielmente, sem redesenhar, sem trocar cores nem inventar detalhes."
-               if any("escudo" in r or "logo da competição" in r for r in refs) else
-               "Não desenhe escudos de clubes.")
-
+    pessoa = (
+        "Use a pessoa da imagem de referência como o jogador do card. É uma fotografia real, conferida e licenciada: "
+        "preserve rosto, identidade, corpo e uniforme exatamente como estão. Faça um recorte profissional e integre o jogador "
+        "ao cenário com luz e cor coerentes. Não invente patrocínio, escudo ou número no uniforme. Não altere o rosto. "
+        "É uma composição editorial, não pode parecer o registro fotográfico de um lance real."
+        if com_foto else
+        "Não desenhe nenhuma pessoa (nenhum jogador, técnico ou torcedor com rosto). Use estádio, gramado, luz de refletores, "
+        "bola, fumaça, texturas e grafismos discretos."
+    )
     partes = [
-        f"Crie a arte de um card para o perfil @{marca.get('handle', 'seutipster.app')} ({marca.get('nome', '')}).",
-        ESTILO.format(bg=marca.get("bg", "#0A0C09"), cor=marca.get("cor", "#95FF50")),
-        cena, pessoa, escudos,
+        f"Crie o VISUAL de fundo de um post de Instagram (4:5) do perfil @{marca.get('handle', '')}. "
+        "Tipografia, placar, escudos e logotipo serão colocados depois por um renderizador, então a imagem NÃO pode ter "
+        "nenhuma letra, número, palavra, placa, logo, escudo, marca d'água ou interface.",
     ]
-    if refs:
-        partes.append("Imagens de referência, na ordem: " + "; ".join(f"imagem {i}: {r}" for i, r in enumerate(refs, 1)) + ".")
-    partes.append("TEXTOS DO CARD (os únicos permitidos):\n" + "\n".join(linhas))
+    m = manual(marca.get("handle"), modelo, pre_jogo)
+    if m:
+        partes.append("MANUAL DA MARCA (siga; as partes sobre texto e logotipo são feitas pelo renderizador, não por você):\n" + m)
+    partes += [
+        pessoa,
+        "COMPOSIÇÃO: " + ZONAS.get(modelo, ZONAS["noticia"]) + " " + CANTO,
+        "Acabamento: campanha esportiva premium, cinematográfica, iluminação profissional, contraste alto, profundidade, "
+        "textura sofisticada. Nada de aparência genérica de IA: sem brilho plástico, pele de cera, objetos derretidos ou "
+        "excesso de efeitos. Não imite nenhum canal ou emissora.",
+    ]
+    if contexto:
+        partes.append("\n".join(contexto))
     if correcoes:
-        partes.append("A versão anterior saiu com estes erros. Corrija todos:\n- " + "\n- ".join(correcoes))
+        partes.append("A versão anterior foi reprovada pela revisão. Corrija:\n- " + "\n- ".join(correcoes))
     return "\n\n".join(partes)
 
 
-def esperados(d: dict) -> list[str]:
-    out = []
-    for k in ("titulo", "legenda_jogador", "casa", "fora", "hora", "palavra", "marca_dagua"):
-        if d.get(k):
-            out.append(_limpo(d[k]))
-    if d.get("gols_casa") is not None and d.get("gols_fora") is not None:
-        out.append(f"placar {d['gols_casa']} x {d['gols_fora']}")
-    for k in ("autores_casa", "autores_fora"):
-        out += [_limpo(x) for x in d.get(k) or []]
-    for f in d.get("fatos") or []:
-        out += [_limpo(f.get("n")), _limpo(f.get("l"))]
-    for j in d.get("jogos") or []:
-        out.append(f'{_limpo(j.get("hora"))} {_limpo(j.get("casa"))} x {_limpo(j.get("fora"))}')
-    return [x for x in out if x]
-
-
-# ----------------------------------------------------------- referências --
-async def referencias(d: dict) -> tuple[list[tuple[bytes, str]], list[str]]:
-    """Baixa a foto conferida e os escudos. Só material limpo (nunca arte de terceiros)."""
-    pedidos: list[tuple[str, str]] = []
-    if d.get("foto") and d.get("foto_conferida", True):
-        pedidos.append((d["foto"], f"foto do jogador {_limpo((d.get('jogador') or {}).get('nome') or d.get('legenda_jogador') or '')}".strip()))
-    if d.get("casa") and d.get("escudo_casa"):
-        pedidos.append((d["escudo_casa"], f"escudo do {_limpo(d['casa'])}"))
-    if d.get("fora") and d.get("escudo_fora"):
-        pedidos.append((d["escudo_fora"], f"escudo do {_limpo(d['fora'])}"))
-    if d.get("escudo"):
-        pedidos.append((d["escudo"], "escudo do clube da notícia"))
-    if d.get("logo_liga"):
-        pedidos.append((d["logo_liga"], "logo da competição"))
-    for j in (d.get("jogos") or [])[:6]:
-        for lado in ("casa", "fora"):
-            if j.get(f"escudo_{lado}"):
-                pedidos.append((j[f"escudo_{lado}"], f"escudo do {_limpo(j.get(lado))}"))
-    imgs, nomes = [], []
-    for url, nome in pedidos[:16]:
-        try:
-            dados, mime = await fotos.baixar(url, 1536 if nome.startswith("foto") else 512)
-        except Exception as e:
-            log.info("[ARTE] referência ignorada (%s): %s", nome, e)
-            continue
-        im = Image.open(io.BytesIO(dados))
-        buf = io.BytesIO()
-        im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB").save(buf, "PNG")
-        imgs.append((buf.getvalue(), "image/png"))
-        nomes.append(nome)
-    return imgs, nomes
-
-
 # ---------------------------------------------------------------- OpenAI --
-async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
+async def _chamar(prompt: str, ref: bytes | None) -> bytes:
     hoje = date.today()
     if _uso["dia"] != hoje:
         _uso.update(dia=hoje, n=0)
@@ -217,10 +186,9 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
               "output_format": "jpeg", "output_compression": "95", "n": "1"}
     async with _sem:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20)) as c:
-            if refs:
-                campo = "image[]" if len(refs) > 1 else "image"
-                arquivos = [(campo, (f"ref{i}.png", b, m)) for i, (b, m) in enumerate(refs, 1)]
-                r = await c.post(f"{BASE}/images/edits", headers=cab, data=params, files=arquivos)
+            if ref:
+                r = await c.post(f"{BASE}/images/edits", headers=cab, data=params,
+                                 files=[("image", ("jogador.png", ref, "image/png"))])
             else:
                 r = await c.post(f"{BASE}/images/generations", headers=cab, json=params)
     if r.status_code >= 400:
@@ -236,75 +204,98 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
 
 
 # ------------------------------------------------------------ conferência --
-PROMPT_CONF = """Você é o revisor final de um card de Instagram de futebol antes de publicar.
-Textos que DEVEM aparecer, corretos (acentos, grafia e números idênticos; pode estar em caixa alta):
-{lista}
+PROMPT_CONF = """Você é o diretor de arte que aprova o VISUAL de fundo de um post de Instagram de futebol. Texto, placar, escudos e logo serão colocados depois; esta imagem não pode ter nenhum deles.
+{ref}
+Área que precisa estar livre (escura, calma, sem detalhes): {zona} {canto}
 
 Responda SOMENTE com JSON:
-{{"ok": true|false,
- "erros": ["cada problema em até 12 palavras"]}}
-Marque ok=false se: algum texto obrigatório faltar ou estiver errado; aparecer número, placar ou nome diferente do pedido; aparecer texto legível inventado (exceto palavras soltas ilegíveis de fundo); aparecer logo ou nome de emissora, portal, casa de aposta ou outro perfil; houver pessoa ou rosto deformado; o card parecer amador."""
+{{"estado": "aprovada" | "necessita_correcao" | "rejeitada",
+ "problemas": ["cada problema em até 12 palavras"]}}
+Reprove (necessita_correcao) se houver: qualquer letra, número, palavra, logo, escudo, marca d'água, placa legível; área de texto ocupada; rosto ou corpo deformado, mãos estranhas; {pessoa}; aparência genérica de IA ou amadora; elementos de outro canal/emissora.
+Use "rejeitada" só se a imagem for inaproveitável ou ofensiva."""
 
 
-async def conferir(img: bytes, d: dict) -> dict:
+async def conferir(img: bytes, modelo: str, ref: bytes | None) -> dict:
     k = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not k:
-        return {"ok": True, "erros": [], "sem_revisor": True}
-    im = Image.open(io.BytesIO(img)).convert("RGB")
-    im.thumbnail((1100, 1100))
-    buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=88)
-    lista = "\n".join(f"- {x}" for x in esperados(d)) or "- (nenhum texto obrigatório)"
+        return {"estado": "aprovada", "problemas": [], "sem_revisor": True}
+
+    def b64(dados: bytes, lado: int) -> str:
+        im = Image.open(io.BytesIO(dados)).convert("RGB")
+        im.thumbnail((lado, lado))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=88)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    conteudo = []
+    if ref:
+        conteudo += [{"type": "text", "text": "IMAGEM 1: foto real do jogador (referência)."},
+                     {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(ref, 512)}},
+                     {"type": "text", "text": "IMAGEM 2: visual a aprovar."}]
+    conteudo += [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(img, 1100)}},
+                 {"type": "text", "text": PROMPT_CONF.format(
+                     ref="Compare o jogador da IMAGEM 2 com a IMAGEM 1." if ref else "Não deve haver pessoa com rosto.",
+                     zona=ZONAS.get(modelo, ZONAS["noticia"]), canto=CANTO,
+                     pessoa="pessoa diferente da referência ou rosto alterado" if ref else "pessoa com rosto visível")}]
     try:
         async with httpx.AsyncClient(timeout=90) as c:
             r = await c.post(os.getenv("ANTHROPIC_BASE", "https://api.anthropic.com") + "/v1/messages",
                              headers={"x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                             json={"model": MODELO_CONF, "max_tokens": 500, "messages": [{"role": "user", "content": [
-                                 {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                                              "data": base64.b64encode(buf.getvalue()).decode()}},
-                                 {"type": "text", "text": PROMPT_CONF.format(lista=lista)}]}]})
+                             json={"model": MODELO_CONF, "max_tokens": 500, "messages": [{"role": "user", "content": conteudo}]})
         txt = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
         m = re.search(r"\{.*\}", txt, re.S)
         v = json.loads(m.group(0)) if m else {}
     except Exception as e:
-        return {"ok": False, "erros": [f"revisão falhou: {type(e).__name__}"]}
-    return {"ok": bool(v.get("ok")), "erros": [str(x) for x in (v.get("erros") or [])][:8]}
+        return {"estado": "necessita_correcao", "problemas": [f"revisão falhou: {type(e).__name__}"]}
+    estado = v.get("estado") if v.get("estado") in ("aprovada", "necessita_correcao", "rejeitada") else "necessita_correcao"
+    return {"estado": estado, "problemas": [str(x) for x in (v.get("problemas") or [])][:8]}
 
 
 # ---------------------------------------------------------------- principal --
-async def criar_arte(modelo: str, d: dict, marca: dict) -> tuple[bytes, list[str]]:
-    """Devolve (jpeg 1080x1350 sem rodapé, avisos). Levanta ArteErro se não sair arte confiável."""
-    refs, nomes = await referencias(d)
+async def criar_visual(modelo: str, d: dict, marca: dict) -> tuple[bytes, list[str]]:
+    """Devolve (jpeg 1080x1350 sem texto, avisos). Levanta ArteErro se não sair visual aprovado."""
+    ref = None
+    if d.get("foto"):
+        try:
+            dados, _ = await fotos.baixar(d["foto"], 1536)
+            buf = io.BytesIO()
+            Image.open(io.BytesIO(dados)).convert("RGB").save(buf, "PNG")
+            ref = buf.getvalue()
+        except Exception as e:
+            log.info("[ARTE] foto de referência indisponível: %s", e)
     avisos: list[str] = []
-    correcoes: list[str] | None = None
+    correcoes = None
     ultimo = ""
     for tentativa in range(2):
         try:
-            img = await _chamar(briefing(modelo, d, marca, nomes, correcoes), refs)
+            img = await _chamar(briefing(modelo, d, marca, bool(ref), correcoes), ref)
         except ArteErro as e:
-            msg = str(e)
-            # recusa por foto de pessoa real: tenta sem a foto (card sem jogador)
-            if refs and nomes and nomes[0].startswith("foto") and ("moderation" in msg or "safety" in msg):
-                refs, nomes = refs[1:], nomes[1:]
-                avisos.append("OpenAI recusou usar a foto do jogador: arte sem jogador")
+            msg = str(e).lower()
+            if ref and ("moderation" in msg or "safety" in msg):  # recusou a foto de pessoa real
+                ref = None
+                avisos.append("OpenAI recusou tratar a foto do jogador: visual sem jogador")
                 continue
             raise
-        v = await conferir(img, d)
+        v = await conferir(img, modelo, ref)
         log.info("[ARTE] %s tentativa %d · %s", modelo, tentativa + 1, v)
-        if v["ok"]:
+        if v["estado"] == "aprovada":
             if tentativa:
-                avisos.append("arte refeita após conferência de texto")
+                avisos.append("visual refeito após revisão")
+            if ref is None and d.get("foto"):
+                avisos.append("visual sem a foto do jogador")
             return _ajustar(img), avisos
-        correcoes = v["erros"] or ["texto diferente do pedido"]
+        if v["estado"] == "rejeitada":
+            raise ArteErro("visual rejeitado na revisão: " + "; ".join(v["problemas"]))
+        correcoes = v["problemas"] or ["não seguiu a composição pedida"]
         ultimo = "; ".join(correcoes)
-    raise ArteErro(f"arte da OpenAI reprovada na conferência: {ultimo}")
+    raise ArteErro(f"visual reprovado na revisão: {ultimo}")
 
 
 def _ajustar(img: bytes) -> bytes:
     im = Image.open(io.BytesIO(img)).convert("RGB")
     alvo = 1080 / 1350
     w, h = im.size
-    if abs(w / h - alvo) > 0.005:  # corta o excesso mantendo o centro
+    if abs(w / h - alvo) > 0.005:
         if w / h > alvo:
             nw = int(h * alvo)
             im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
