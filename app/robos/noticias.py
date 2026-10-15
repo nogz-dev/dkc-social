@@ -301,6 +301,7 @@ Devolva SOMENTE um objeto JSON:
  "fatos": de 0 a 4 itens {"n": número/valor curto (até 7 caracteres), "l": rótulo até 22 caracteres} TIRADOS DAS FONTES; se não houver números concretos, devolva [],
  "legenda": a legenda completa (regras abaixo),
  "pessoa_foto": nome completo do jogador/técnico protagonista para buscar foto, ou null,
+ "clube_foto": clube atual dessa pessoa, ou null,
  "fonte_nome": nome do veículo que deu a informação principal,
  "urgente": true só se for bomba de nota 9–10
 }

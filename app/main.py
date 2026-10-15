@@ -33,7 +33,7 @@ from . import pauta, publora, webpush
 from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
 from .robos import resultados as robo_resultados
-from .cards import fotos
+from .cards import foto_jogador, fotos
 from .cards.render import MODELOS, renderizador
 
 log = logging.getLogger("dkc")
@@ -633,7 +633,7 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
     pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
                            legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
                            midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"),
-                           sem_auto=any("sem foto" in a for a in avisos))
+                           sem_auto=bool(body.get("sem_auto")) or any("sem foto" in a for a in avisos))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos
@@ -855,7 +855,8 @@ async def ciclo_resultados() -> dict[str, Any]:
             pedido = robo_resultados.montar(j, gs, handle)
             d0 = pedido["slides"][0]["dados"]
             foto_estadio = d0.get("foto")
-            await foto_do_jogo(j, gs, pedido)
+            if not await foto_do_jogo(j, gs, pedido):
+                pedido["sem_auto"] = True  # sem foto de jogador conferida: vai para a fila, não sai sozinho
             try:
                 pid, _av = await criar_post_de_slides(pedido, "robo")
             except HTTPException as e:
@@ -888,35 +889,25 @@ async def ciclo_resultados() -> dict[str, Any]:
     return res
 
 
-async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> None:
-    """Foto de jogador no card de resultado: matéria do jogo → protagonista no Wikimedia → estádio."""
+async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> bool:
+    """Foto do protagonista do jogo, conferida (jogador certo + foto limpa).
+    Nunca usa imagem de matéria ou arte de outro veículo. Devolve True se achou."""
     d = pedido["slides"][0]["dados"]
-    casa = robo_rodada.nome(j["teams"]["home"]["name"]).split()[0].lower()
-    fora = robo_rodada.nome(j["teams"]["away"]["name"]).split()[0].lower()
-    # 1) foto da matéria sobre o jogo que os portais acabaram de publicar
-    try:
-        rows = await pool.fetch(
-            "SELECT url, fonte FROM noticias_itens WHERE visto_em > now() - interval '4 hours' "
-            "AND lower(titulo) LIKE $1 AND lower(titulo) LIKE $2 ORDER BY visto_em DESC LIMIT 3",
-            f"%{casa}%", f"%{fora}%")
-        for r in rows:
-            m = await robo_noticias.ler_materia(r["url"])
-            if m.get("og_image"):
-                d["foto"], d["credito_foto"], d["foco"] = m["og_image"], f"Foto: reprodução {r['fonte']}", "center 25%"
-                return
-    except Exception:
-        log.exception("[RESULTADOS] foto da matéria")
-    # 2) protagonista do jogo (foto livre)
-    venc = j["teams"]["home"]["id"] if j["teams"]["home"].get("winner") else (
-        j["teams"]["away"]["id"] if j["teams"]["away"].get("winner") else None)
+    th, ta = j["teams"]["home"], j["teams"]["away"]
+    venc = th["id"] if th.get("winner") else (ta["id"] if ta.get("winner") else None)
     h = robo_resultados.heroi(gs, venc)
-    if h:
-        nome = await robo_resultados.nome_completo(h.get("jogador_id")) or h.get("jogador")
-        wm = await robo_noticias.foto_wikimedia(nome or "")
-        if wm:
-            d["foto"], d["credito_foto"], d["foco"] = wm[0], wm[1], "center 18%"
-            return
-    # 3) fica a foto do estádio (já preenchida)
+    if not h:
+        return False
+    clube = robo_rodada.nome(th["name"] if h["time_id"] == th["id"] else ta["name"])
+    try:
+        f = await foto_jogador.foto_verificada(h.get("jogador"), clube, h.get("jogador_id"))
+    except Exception:
+        log.exception("[RESULTADOS] foto do jogador")
+        f = None
+    if not f:
+        return False
+    d["foto"], d["credito_foto"], d["foco"] = f["url"], f["credito"], "center 18%"
+    return True
 
 
 async def job_resultados() -> None:
@@ -1108,7 +1099,6 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     materias = await asyncio.gather(*(robo_noticias.ler_materia(f["url"]) for f in fontes))
     for f, m in zip(fontes, materias):
         f["texto"] = m.get("texto", "")
-        f["og_image"] = m.get("og_image", "")
     post = await _ia(robo_noticias.MODELO_TEXTO, robo_noticias.SISTEMA_REDACAO,
                      robo_noticias.prompt_redacao(titulo_assunto, fontes), 2500)
     if not isinstance(post, dict) or not post.get("legenda") or not post.get("titulo_card"):
@@ -1116,17 +1106,15 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     legenda = robo_noticias.corrigir_legenda(post["legenda"])
     problemas = robo_noticias.checar_legenda(legenda)
 
-    # foto: Wikimedia (livre) → imagem da matéria → imagem do feed
+    # foto: só jogador conferido (API-Football + busca + checagem por IA). Nunca imagem de matéria/arte de outro canal.
     foto, credito = None, None
-    for f in fontes:  # 1) foto da própria matéria: atual, do lance/do jogador
-        if f.get("og_image") or f.get("imagem"):
-            foto = f.get("og_image") or f.get("imagem")
-            credito = f"Foto: reprodução {f['fonte']}"
-            break
-    if not foto:  # 2) foto livre do protagonista
-        wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
-        if wm:
-            foto, credito = wm
+    try:
+        fv = await foto_jogador.foto_verificada(post.get("pessoa_foto"), post.get("clube_foto"))
+    except Exception:
+        log.exception("[NOTICIAS] foto do jogador")
+        fv = None
+    if fv:
+        foto, credito = fv["url"], fv["credito"]
     urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
     dados = {
         "foto": foto, "credito_foto": credito, "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
@@ -1146,10 +1134,8 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
         pid, _av = await criar_post_de_slides(pedido, "robo")
     except HTTPException as e:
         if foto and e.status_code == 422:  # foto da matéria não baixou: tenta foto livre, senão sai sem foto
-            wm = await robo_noticias.foto_wikimedia(post.get("pessoa_foto") or "")
-            dados["foto"], dados["credito_foto"] = (wm if wm else (None, None))
-            if not wm:
-                dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
+            dados["foto"], dados["credito_foto"] = None, None
+            dados["marca_dagua"] = (post.get("tag2") or "")[:8].upper() or None
             try:
                 pid, _av = await criar_post_de_slides(pedido, "robo")
             except HTTPException as e2:

@@ -89,3 +89,12 @@ Brasileirão e Champions; nas ligas europeias só jogo com clube grande
 (`GRANDES` em `app/robos/resultados.py`). Teto de 12 por dia
 (`RESULTADOS_TETO_DIA`). Na estreia e para jogos de mais de 6h atrás, só marca
 como visto (não posta atrasado). Detecta virada, goleada, empate e pênaltis.
+
+## Regra de fotos (inegociável)
+Nunca usar imagem de matéria, arte ou post de outro veículo. A foto do card vem
+de `app/cards/foto_jogador.py`: a API-Football confirma o jogador e dá a foto de
+referência; buscamos candidatas pelo nome (Wikimedia Commons e, com
+`BRAVE_API_KEY`, busca de imagens na web); uma IA com visão confere cada uma
+(mesma pessoa da referência, fotografia limpa sem texto/logo/arte de outro
+canal, boa para capa). Sem foto conferida: resultado vai para a fila (não sai
+sozinho) e notícia sai sem foto de jogador.
