@@ -45,7 +45,15 @@ STATIC = ROOT / "static"
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres@127.0.0.1:5433/dkc")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 ROBO_KEY = os.getenv("ROBO_KEY", "")  # chave dos robôs que criam posts
-QG_KEY = os.getenv("QG_KEY", "").strip().strip("\"'").strip()  # chave do QG do Nog (só leitura do status)
+def _env_qg_key() -> str:
+    """Lê a chave do QG tolerando nome com espaço/maiúscula diferente (comum ao digitar no celular)."""
+    for nome, valor in os.environ.items():
+        if nome.strip().upper().replace(" ", "") == "QG_KEY":
+            return valor.strip().strip("\"'").strip()
+    return ""
+
+
+QG_KEY = _env_qg_key()  # chave do QG do Nog (só leitura do status)
 SESSAO_DIAS = 60
 
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
@@ -1441,7 +1449,10 @@ def _digital(v: str) -> str:
 
 async def exige_qg(x_qg_key: str = Header(default="")) -> None:
     if not QG_KEY:
-        raise HTTPException(401, "QG_KEY não está configurada no DKC Social")
+        vistos = [repr(n) for n in os.environ if "QG" in n.upper()]
+        servico = os.getenv("RAILWAY_SERVICE_NAME", "?")
+        raise HTTPException(401, f"QG_KEY não está configurada no DKC Social (serviço {servico}; "
+                                 f"variáveis com QG no nome: {', '.join(vistos) or 'nenhuma'})")
     if not hmac.compare_digest(x_qg_key.strip(), QG_KEY):
         raise HTTPException(401, f"chave diferente — DKC Social tem {_digital(QG_KEY)}, o QG mandou {_digital(x_qg_key.strip())}")
 
