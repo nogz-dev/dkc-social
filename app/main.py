@@ -54,6 +54,9 @@ def _env_qg_key() -> str:
 
 
 QG_KEY = _env_qg_key()  # chave do QG do Nog (só leitura do status)
+# Reserva para quando a variável QG_KEY não chega ao servidor no Railway: só a impressão SHA-256 da chave
+# (a chave em si nunca fica no código; com a variável configurada, ela tem prioridade).
+QG_KEY_SHA256 = os.getenv("QG_KEY_SHA256", "ea5d51ff6f31f4ab19fcce2bd7ad4abb1d2fa36c3b69b4cd834aadf4d1c08145")
 SESSAO_DIAS = 60
 
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
@@ -1435,6 +1438,9 @@ def _digital(v: str) -> str:
 
 async def exige_qg(x_qg_key: str = Header(default="")) -> None:
     if not QG_KEY:
+        enviada = x_qg_key.strip()
+        if enviada and QG_KEY_SHA256 and hmac.compare_digest(hashlib.sha256(enviada.encode()).hexdigest(), QG_KEY_SHA256):
+            return
         vistos = [repr(n) for n in os.environ if "QG" in n.upper()]
         servico = os.getenv("RAILWAY_SERVICE_NAME", "?")
         raise HTTPException(401, f"QG_KEY não está configurada no DKC Social (serviço {servico}; "
