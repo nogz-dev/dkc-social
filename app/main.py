@@ -1021,7 +1021,7 @@ async def ciclo_noticias(forcar: bool = False) -> dict[str, Any]:
                 for k, it in enumerate(lote):
                     it["id"] = k
                 saida = await _ia(robo_noticias.MODELO_TRIAGEM, robo_noticias.SISTEMA_TRIAGEM,
-                                  robo_noticias.prompt_triagem(lote, recentes), 4000)
+                                  robo_noticias.prompt_triagem(lote, recentes), 8000)
                 por_item = {o.get("item"): o for o in (saida if isinstance(saida, list) else []) if isinstance(o, dict)}
                 novos_no_lote: dict[str, int] = {}
                 for it in lote:

@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import html
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser
 import httpx
+
+log = logging.getLogger("dkc")
 
 UA = "Mozilla/5.0 (compatible; DKCSocial/1.0)"
 
@@ -230,7 +233,14 @@ async def claude(modelo: str, sistema: str, usuario: str, max_tokens: int = 2000
     d = r.json()
     txt = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
     uso = d.get("usage") or {}
-    return _json(txt), {"in": uso.get("input_tokens", 0), "out": uso.get("output_tokens", 0)}
+    if d.get("stop_reason") == "max_tokens":
+        log.warning("[IA] resposta cortada no limite de %s tokens (%s) — aproveitando o que veio completo", max_tokens, modelo)
+    try:
+        dados = _json(txt)
+    except ValueError:
+        log.warning("[IA] JSON inválido (%s, parada=%s). Fim da resposta: %r", modelo, d.get("stop_reason"), txt[-300:])
+        raise
+    return dados, {"in": uso.get("input_tokens", 0), "out": uso.get("output_tokens", 0)}
 
 
 def _json(txt: str) -> Any:
@@ -246,6 +256,19 @@ def _json(txt: str) -> Any:
                 return json.loads(txt[i:j + 1])
             except json.JSONDecodeError:
                 continue
+    # Lista cortada ou com um item quebrado: aproveita cada objeto que veio inteiro, em vez de perder o lote todo.
+    if txt.lstrip().startswith("["):
+        dec, achados, pos = json.JSONDecoder(), [], txt.find("{")
+        while pos != -1:
+            try:
+                obj, fim = dec.raw_decode(txt, pos)
+                if isinstance(obj, dict):
+                    achados.append(obj)
+                pos = txt.find("{", fim)
+            except json.JSONDecodeError:
+                pos = txt.find("{", pos + 1)
+        if achados:
+            return achados
     raise ValueError("a IA não devolveu JSON válido")
 
 
