@@ -19,10 +19,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from PIL import Image
 
-from . import fotos
+from . import fotos, recorte
 
 AQUI = Path(__file__).resolve().parent
-MODELOS = ("noticia", "jogador", "rodada", "resultado")
+MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi")
 
 # ------------------------------------------------------------------ marcas --
 # Cada perfil posta com a própria identidade. Chave = @ do Instagram.
@@ -148,6 +148,14 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
                 break
     if d.get("cor_faixa"):
         d["faixa_escura"] = _escura(d["cor_faixa"])
+    # escudo do protagonista em destaque (formato herói)
+    if modelo == "heroi":
+        d["escudo_destaque_img"] = d.get("escudo_fora") if d.get("lado_destaque") == "fora" else d.get("escudo_casa")
+    # jogador recortado sobre o nosso cenário
+    if d.get("foto") and (modelo == "heroi" or d.get("recortar")):
+        d["recorte"] = await recorte.recortar(d["foto"])
+        if not d["recorte"]:
+            avisos.append("recorte do jogador falhou: foi usada a foto inteira")
     if not d.get("foto"):
         avisos.append("card sem foto")
     return avisos

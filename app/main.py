@@ -603,6 +603,22 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     if len(slides) > 10:
         raise HTTPException(400, "máximo de 10 slides")
     midias, avisos = [], []
+    for sl in slides:  # "jogador" no slide = buscar foto conferida (API-Football + busca + checagem por IA)
+        dd = sl.get("dados") or {}
+        jg = dd.get("jogador")
+        if jg and not dd.get("foto"):
+            try:
+                fv = await foto_jogador.foto_verificada(jg.get("nome"), jg.get("clube"), jg.get("id"))
+            except Exception:
+                log.exception("[CARDS] foto do jogador")
+                fv = None
+            if fv:
+                dd["foto"], dd["credito_foto"] = fv["url"], fv["credito"]
+                if fv.get("aviso"):
+                    avisos.append(fv["aviso"])
+            else:
+                avisos.append(f"sem foto conferida de {jg.get('nome')}")
+            sl["dados"] = dd
     for i, sl in enumerate(slides, 1):
         if sl.get("modelo") not in MODELOS:
             raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")

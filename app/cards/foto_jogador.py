@@ -154,6 +154,8 @@ Responda SOMENTE com JSON:
 {{"mesma_pessoa": true|false|null,   // a candidata mostra o jogador procurado? (null só se não houver referência e não der para saber)
  "foto_limpa": true|false,          // fotografia real, SEM texto sobreposto, logo de emissora/portal, arte gráfica, montagem, moldura, marca d'água ou layout de outro canal
  "boa_para_capa": true|false,       // jogador em destaque, nítido, rosto visível, cabe num recorte vertical 4:5
+ "camisa_do_clube": true|false|null, // está com a camisa do clube informado? (null se não houver clube ou não der para ver)
+ "corpo_inteiro_ou_busto": true|false, // aparece pelo menos da cintura para cima (bom para recortar)
  "motivo": "até 15 palavras"}}
 Seja rigoroso: qualquer texto ou grafismo editado por cima da foto = foto_limpa false."""
 
@@ -210,13 +212,19 @@ async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id
             if cnd["url"] not in vistos:
                 vistos.add(cnd["url"])
                 cands.append(cnd)
-    for cnd in cands[:8]:
+    reserva = None  # foto aprovada, mas com camisa de outro clube: só se não houver melhor
+    for cnd in cands[:10]:
         try:
             dados, _ = await fotos.baixar(cnd["url"], 1600)
         except Exception:
             continue
         v = await checar(dados, nome_busca, clube, ref_bytes)
         log.info("[FOTO] %s · %s · %s", nome_busca, cnd["origem"], v)
-        if v.get("ok"):
-            return {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca}
-    return None
+        if not v.get("ok"):
+            continue
+        achada = {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca, "aviso": None}
+        if not clube or v.get("camisa_do_clube") is not False:
+            return achada
+        if not reserva:
+            reserva = {**achada, "aviso": f"foto de {nome_busca} com camisa de outro clube: confira"}
+    return reserva
