@@ -1,0 +1,53 @@
+{
+  "id": "2026-10-15-flu-1x2-palmeiras-heroi",
+  "perfil": "seutipster.app",
+  "linha": "resultado",
+  "sem_auto": true,
+  "foto_opcional": true,
+  "titulo": "Fluminense 1x2 Palmeiras · ida da semi da Libertadores",
+  "fonte": "API-Football · Portal do Palestra · O Liberal · Vavel · Infobae",
+  "fonte_urls": [
+    "https://www.portaldopalestra.com.br",
+    "https://www.oliberal.com",
+    "https://www.vavel.com",
+    "https://www.infobae.com",
+    "https://www.bnews.com.br"
+  ],
+  "legenda": "O Palmeiras foi ao Maracanã, venceu o Fluminense por 2 a 1 e leva a vantagem pra volta da semi da Libertadores. 🟢\n\nFlaco López abriu o placar no fim do primeiro tempo, Marlon Freitas ampliou na reta final e Wesley Natã descontou nos acréscimos, diante de 69 mil torcedores.\n\nNa volta, no Nubank Parque, o empate classifica o Verdão. O Flu precisa vencer por dois gols, ou por um pra levar aos pênaltis.\n\nDá pra virar ou o Palmeiras já tá na final? Comenta aí 👇\n\n#Libertadores #Palmeiras #Fluminense #SeuTipster",
+  "slides": [
+    {
+      "modelo": "heroi",
+      "dados": {
+        "jogador": {"nome": "Marlon Freitas", "clube": "Palmeiras"},
+        "tag": "Fim de jogo",
+        "tag2": "Libertadores",
+        "palavra": "Vantagem",
+        "titulo": "*Palmeiras* cala o Maracanã",
+        "legenda_jogador": "Marlon Freitas fez o gol da vitória",
+        "lado_destaque": "fora",
+        "casa": "Fluminense",
+        "fora": "Palmeiras",
+        "escudo_casa": "https://media.api-sports.io/football/teams/124.png",
+        "escudo_fora": "https://media.api-sports.io/football/teams/121.png",
+        "gols_casa": 1,
+        "gols_fora": 2,
+        "autores_casa": ["Wesley Natã"],
+        "autores_fora": ["Flaco López", "Marlon Freitas"]
+      }
+    },
+    {
+      "modelo": "noticia",
+      "dados": {
+        "tag": "Semifinal",
+        "tag2": "Volta",
+        "titulo": "Empate leva o *Palmeiras* à final",
+        "marca_dagua": "VOLTA",
+        "fatos": [
+          {"n": "2", "l": "gols de vantagem: o Flu avança"},
+          {"n": "1", "l": "gol de vantagem: pênaltis"},
+          {"n": "EMPATE", "l": "Palmeiras na final"}
+        ]
+      }
+    }
+  ]
+}
