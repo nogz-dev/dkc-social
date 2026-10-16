@@ -212,6 +212,24 @@ async def evento(post_id: Optional[uuid.UUID], tipo: str, detalhe: str = "") -> 
         log.exception("[EVENTO] falha ao gravar")
 
 
+async def limpeza_unica() -> None:
+    """Pedido do Nog (16/10/2026): recusar tudo que estava na fila para ver só as artes novas (OpenAI).
+    Roda uma vez só (marca na tabela config). Não mexe no que já foi aprovado/agendado/publicado."""
+    marca = "limpeza_fila_2026_10_16"
+    if await cfg_get(marca):
+        return
+    rows = await pool.fetch(
+        "UPDATE posts SET status='recusado', decidido_em=now(), motivo_recusa='limpeza da fila: troca para arte da OpenAI' "
+        "WHERE status IN ('pendente','erro') RETURNING id")
+    ids = [r["id"] for r in rows]
+    if ids:
+        await pool.execute("UPDATE assuntos SET status='recusado' WHERE post_id = ANY($1::uuid[])", ids)
+        for pid in ids:
+            await evento(pid, "recusado", "limpeza da fila: troca para arte da OpenAI")
+    await cfg_set(marca, datetime.now(timezone.utc).isoformat())
+    log.info("[BOOT] limpeza da fila: %d posts recusados", len(ids))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -219,6 +237,7 @@ async def lifespan(app: FastAPI):
     async with pool.acquire() as c:
         await c.execute(SCHEMA)
     await vapid()
+    await limpeza_unica()
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
     tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
@@ -1418,6 +1437,19 @@ async def aprovar_lote(body: LoteIn, request: Request, _=Depends(exige_login)):
 
 class RecusarIn(BaseModel):
     motivo: str = ""
+
+
+@app.post("/api/posts/recusar-lote")
+async def recusar_lote(body: LoteIn, _=Depends(exige_login)):
+    rows = await pool.fetch(
+        "UPDATE posts SET status='recusado', decidido_em=now(), motivo_recusa='recusado em lote' "
+        "WHERE id = ANY($1::uuid[]) AND status IN ('pendente','erro') RETURNING id", body.ids[:200])
+    ids = [r["id"] for r in rows]
+    if ids:
+        await pool.execute("UPDATE assuntos SET status='recusado' WHERE post_id = ANY($1::uuid[])", ids)
+        for pid in ids:
+            await evento(pid, "recusado", "recusado em lote")
+    return {"recusados": len(ids)}
 
 
 @app.post("/api/posts/{pid}/recusar")

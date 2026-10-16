@@ -109,6 +109,7 @@ document.addEventListener("click", (e) => {
   else if (act === "fechar") fecharDetalhe();
   else if (act === "lote-limpar") { S.sel.clear(); renderLista(); }
   else if (act === "lote-aprovar") aprovarLote();
+  else if (act === "lote-recusar") recusarLote();
   else if (act === "aprovar") { e.stopPropagation(); aprovar(id); }
   else if (act === "recusar") { e.stopPropagation(); recusar(id); }
   else if (act === "editar") { e.stopPropagation(); abrirDetalhe(id); }
@@ -225,6 +226,17 @@ async function aprovarLote() {
     const oks = r.resultados.filter((x) => x.ok);
     const ult = oks.map((x) => x.sai_em).filter(Boolean).sort().pop();
     toast(`${oks.length} de ${ids.length} aprovados${ult ? ` · o último sai ${horaCurta(ult)}` : ""}`);
+  } catch (err) { toast(err.message, true); }
+  S.sel.clear(); carregar();
+}
+
+async function recusarLote() {
+  const ids = [...S.sel];
+  if (!ids.length) return;
+  if (!confirm(`Recusar ${ids.length} post(s)?`)) return;
+  try {
+    const r = await api("/api/posts/recusar-lote", { method: "POST", json: { ids } });
+    toast(`${r.recusados} recusado(s)`);
   } catch (err) { toast(err.message, true); }
   S.sel.clear(); carregar();
 }
