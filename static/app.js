@@ -10,7 +10,7 @@ const VIEWS = {
 };
 const STATUS_TXT = { pendente: "Aguardando", publicando: "Enviando", agendado: "Agendado", publicado: "Publicado", recusado: "Recusado", erro: "Erro" };
 const ORIGEM_TXT = { claude: "Claude", robo: "Robô", manual: "Manual" };
-const LINHA_TXT = { noticia: "Notícia", temporada: "Temporada", rodada: "Rodada", resultado: "Resultado", jogador: "Jogador", manual: "Manual" };
+const LINHA_TXT = { noticia: "Notícia", temporada: "Temporada", rodada: "Rodada", resultado: "Resultado", tabela: "Tabela", jogador: "Jogador", manual: "Manual" };
 
 const S = { token: null, view: "fila", posts: [], sel: new Set(), atual: null, slide: 0, perfis: [], resumo: {} };
 const $ = (s) => document.querySelector(s);
@@ -388,7 +388,7 @@ async function renderAjustes() {
     <div class="box"><h3>Perfis do Instagram</h3><p>Puxa as contas conectadas no Publora.</p>
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
-    <div class="box"><h3>Publicação automática</h3><p>Só posts de <b>resultado final</b> dos principais jogos saem sem aprovação. Todo o resto passa pela fila.</p>
+    <div class="box"><h3>Publicação automática</h3><p>Saem <b>sem aprovação</b>: a <b>Rodada do dia</b> (9h), os <b>resultados</b> (cada jogo e o resumo do dia) e a <b>tabela</b> no fim de cada rodada (Brasileirão, Champions, LaLiga, Premier). Se a revisão achar erro na arte, o post para na fila. Notícias sempre passam pela fila.</p>
       <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
     <div class="box"><h3>Robô de resultados</h3><p>Jogo dos principais acabou, o card de resultado sai sozinho no Instagram (é o único que não passa pela fila).</p>
@@ -419,7 +419,7 @@ async function renderAjustes() {
   try {
     const a = await api("/api/config/auto-resultado"); S.auto = a.ligado;
     $("#ajAuto").innerHTML = a.ligado ? `<span class="ok">Ligado</span>` : `<span class="nok">Desligado</span>`;
-    $("#bAuto").textContent = a.ligado ? "Desligar (resultado também passa pela fila)" : "Ligar";
+    $("#bAuto").textContent = a.ligado ? "Desligar (tudo passa pela fila)" : "Ligar";
   } catch {}
   try {
     const r = await api("/api/robos/resultados"); S.res = r;

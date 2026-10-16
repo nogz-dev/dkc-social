@@ -33,6 +33,7 @@ from . import pauta, publora, webpush
 from .robos import noticias as robo_noticias
 from .robos import rodada as robo_rodada
 from .robos import resultados as robo_resultados
+from .robos import tabelas as robo_tabelas
 from .cards import clubes, foto_jogador, fotos, openai_img
 from .cards.render import MODELOS, marca_de, renderizador
 
@@ -60,7 +61,9 @@ QG_KEY_SHA256 = os.getenv("QG_KEY_SHA256", "ea5d51ff6f31f4ab19fcce2bd7ad4abb1d2f
 SESSAO_DIAS = 60
 
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
-LINHAS = ("noticia", "temporada", "rodada", "resultado", "jogador", "manual")
+LINHAS = ("noticia", "temporada", "rodada", "resultado", "tabela", "jogador", "manual")
+# linhas que os robôs publicam sem aprovação (pedido do Nog, 16/10/2026)
+LINHAS_AUTO = ("rodada", "resultado", "tabela")
 MIME_OK = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "video/mp4": "mp4"}
 
 pool: asyncpg.Pool | None = None
@@ -241,7 +244,8 @@ async def lifespan(app: FastAPI):
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
     tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
-             asyncio.create_task(job_noticias()), asyncio.create_task(job_resultados())]
+             asyncio.create_task(job_noticias()), asyncio.create_task(job_resultados()),
+             asyncio.create_task(job_tabelas_resumo())]
     yield
     for t in tasks:
         t.cancel()
@@ -382,6 +386,7 @@ async def criar_post(
     *, perfil_id: Optional[int], linha: str, titulo: str, legenda: str, fonte: str,
     origem: str, midias: list[tuple[str, bytes]], sugerido_para: Optional[datetime] = None,
     fonte_urls: Optional[list] = None, aviso: Optional[str] = None, sem_auto: bool = False,
+    auto: bool = False,
 ) -> uuid.UUID:
     if linha not in LINHAS:
         linha = "manual"
@@ -415,17 +420,20 @@ async def criar_post(
                 uuid.uuid4(), pid, i, mime, dados, secrets.token_urlsafe(18),
             )
     await evento(pid, "criado", origem)
-    # regra: só RESULTADO de jogo (vindo de robô/Claude) pode sair sem aprovação
-    if linha == "resultado" and sem_auto:
-        # resultado incompleto (sem foto boa): não sai sozinho, vai para a fila
-        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80], "⚠️ Resultado sem foto: confira antes de publicar"))
+    # sem aprovação: rodada do dia, resultados e tabela vindos dos robôs (pedido do Nog, 16/10/2026)
+    pode_auto = linha in LINHAS_AUTO and origem != "manual" and (auto or linha == "resultado")
+    if pode_auto and sem_auto:
+        # a arte não passou na revisão automática (texto/placar errado): não sai sozinha
+        asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80], "⚠️ Arte com erro na revisão: confira antes de publicar"))
         return pid
-    if linha == "resultado" and origem != "manual" and await auto_resultado_ligado():
-        res = await _aprovar_um(pid, None, base_publica())
+    if pode_auto and await auto_resultado_ligado():
+        quando = sugerido_para if (sugerido_para and sugerido_para > datetime.now(timezone.utc) + timedelta(minutes=3)) else None
+        res = await _aprovar_um(pid, quando, base_publica(), agora=quando is None and linha != "rodada")
         await evento(pid, "auto_aprovado", json.dumps(res))
         asyncio.create_task(enviar_push({
-            "title": "✅ Resultado publicado", "body": titulo or legenda[:80],
-            "url": f"/?post={pid}", "tag": f"post-{pid}",
+            "title": {"rodada": "📅 Rodada do dia", "tabela": "📊 Tabela", "resultado": "✅ Resultado"}[linha]
+                     + (" agendada" if quando else " publicada"),
+            "body": titulo or legenda[:80], "url": f"/?post={pid}", "tag": f"post-{pid}",
         }))
     else:
         asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80], aviso))
@@ -706,7 +714,8 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
     pid = await criar_post(perfil_id=perfil_id, linha=body.get("linha", "noticia"), titulo=body.get("titulo", ""),
                            legenda=body.get("legenda", ""), fonte=body.get("fonte", ""), origem=origem,
                            midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"),
-                           sem_auto=bool(body.get("sem_auto")) or any("sem foto" in a or openai_img.AVISO_REVISAR in a for a in avisos))
+                           sem_auto=bool(body.get("sem_auto")) or any(openai_img.AVISO_REVISAR in a for a in avisos),
+                           auto=bool(body.get("auto")))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos
@@ -849,6 +858,8 @@ async def gerar_rodada(dia=None, forcar: bool = False) -> dict[str, Any]:
     jogos = await robo_rodada.jogos_do_dia(dia)
     handle = await pool.fetchval("SELECT handle FROM perfis WHERE ativo ORDER BY id LIMIT 1") or "seutipster.app"
     pedido = robo_rodada.montar(jogos, dia, handle)
+    if pedido:
+        pedido["auto"] = True  # sai sem aprovação, no horário sugerido (9h)
     if not pedido:
         await cfg_set(chave_dia, "sem_jogos")
         return {"ok": True, "jogos": 0, "motivo": "nenhum jogo das ligas prioritárias hoje"}
@@ -928,8 +939,7 @@ async def ciclo_resultados() -> dict[str, Any]:
             pedido = robo_resultados.montar(j, gs, handle)
             d0 = pedido["slides"][0]["dados"]
             foto_estadio = d0.get("foto")
-            if not await foto_do_jogo(j, gs, pedido):
-                pedido["sem_auto"] = True  # sem foto de jogador conferida: vai para a fila, não sai sozinho
+            await foto_do_jogo(j, gs, pedido)  # sem foto conferida a arte sai sem jogador (sai sozinho igual)
             try:
                 pid, _av = await criar_post_de_slides(pedido, "robo")
             except HTTPException as e:
@@ -962,6 +972,79 @@ async def ciclo_resultados() -> dict[str, Any]:
     return res
 
 
+# ------------------------------------- robô: tabela de fim de rodada + resultados do dia ----
+
+_tabelas_estado: dict[str, Any] = {"ultima": None, "erro": None, "feitos": []}
+
+
+async def ciclo_tabelas_resumo() -> dict[str, Any]:
+    """Tabela no fim de cada rodada (Série A, Champions, LaLiga, Premier) e o resumo dos resultados
+    do dia quando o último jogo do dia acabar. Os dois saem sem aprovação."""
+    agora = datetime.now(robo_rodada.TZ)
+    handle = await pool.fetchval("SELECT handle FROM perfis WHERE ativo ORDER BY id LIMIT 1") or "seutipster.app"
+    dias = [agora.date() - timedelta(days=1), agora.date()]
+    feitos = []
+    por_dia = {d: await robo_resultados.jogos(d) for d in dias}
+    # 1) tabelas de fim de rodada
+    vistos = set()
+    for d in dias:
+        for lid, temp, rnd in robo_tabelas.rodadas_candidatas(por_dia[d]):
+            if (lid, temp, rnd) in vistos:
+                continue
+            vistos.add((lid, temp, rnd))
+            chave = f"tabela_{lid}_{temp}_{rnd}"
+            if await cfg_get(chave) or not await robo_tabelas.rodada_encerrada(lid, temp, rnd):
+                continue
+            pedido = robo_tabelas.montar_tabela(lid, rnd, await robo_tabelas.classificacao(lid, temp), handle)
+            if not pedido:
+                continue
+            pid, _av = await criar_post_de_slides(pedido, "robo")
+            await cfg_set(chave, str(pid))
+            feitos.append(pedido["titulo"])
+    # 2) resultados do dia: quando todos os jogos do dia acabaram (o de ontem fecha até 4h)
+    for d in dias:
+        chave = f"resumo_{d.isoformat()}"
+        if await cfg_get(chave):
+            continue
+        js = por_dia[d]
+        ontem = d < agora.date()
+        if not js or (not robo_tabelas.dia_encerrado(js) and not (ontem and agora.hour >= 4)):
+            continue
+        if ontem and agora.hour >= 12:  # dia velho: não posta atrasado
+            await cfg_set(chave, "pulado")
+            continue
+        pedido = robo_tabelas.montar_resumo(js, d, handle)
+        if not pedido:
+            await cfg_set(chave, "sem_jogos")
+            continue
+        pid, _av = await criar_post_de_slides(pedido, "robo")
+        await cfg_set(chave, str(pid))
+        feitos.append(pedido["titulo"])
+    return {"feitos": feitos}
+
+
+async def job_tabelas_resumo() -> None:
+    await asyncio.sleep(90)
+    while True:
+        try:
+            if robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0":
+                r = await ciclo_tabelas_resumo()
+                _tabelas_estado.update(ultima=_iso(datetime.now(timezone.utc)), erro=None)
+                if r["feitos"]:
+                    _tabelas_estado["feitos"] = (r["feitos"] + _tabelas_estado["feitos"])[:10]
+                    log.info("[TABELAS] %s", r)
+        except Exception as e:
+            msg = e.detail if isinstance(e, HTTPException) else str(e)
+            _tabelas_estado["erro"] = str(msg)[:300]
+            log.warning("[TABELAS] %s", msg)
+        await asyncio.sleep(600)
+
+
+@app.get("/api/robos/tabelas")
+async def tabelas_status(_=Depends(exige_login)):
+    return _tabelas_estado
+
+
 async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> bool:
     """Foto do protagonista do jogo, conferida (jogador certo + foto limpa).
     Nunca usa imagem de matéria ou arte de outro veículo. Devolve True se achou."""
@@ -979,7 +1062,7 @@ async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> bool:
         f = None
     if not f:
         return False
-    d["foto"], d["credito_foto"], d["foco"] = f["url"], f["credito"], "center 18%"
+    d["foto"], d["credito_foto"], d["foco"], d["foto_tipo"] = f["url"], f["credito"], "center 18%", "jogador"
     return True
 
 

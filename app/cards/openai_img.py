@@ -43,6 +43,7 @@ MODELO_CONF = os.getenv("ARTE_MODELO_CONFERENCIA", "claude-sonnet-5-5")
 RAIZ = Path(__file__).resolve().parents[2]
 MANUAIS = {"seutipster.app": "seu-tipster"}   # @ do perfil → pasta do manual
 AVISO_REVISAR = "revisar a arte"
+TENTATIVAS = int(os.getenv("OPENAI_TENTATIVAS", "3"))   # 1ª + refações quando a revisão acha erro
 
 _sem = asyncio.Semaphore(int(os.getenv("OPENAI_PARALELO", "3")))
 _uso: dict[str, Any] = {"dia": None, "n": 0, "ultimo_erro": None}
@@ -103,16 +104,18 @@ def _secoes(pasta: str) -> dict[str, str]:
 
 
 TIPO_POR_MODELO = {"rodada": "A. AGENDA", "resultado": "D. RESULTADOS", "heroi": "D. RESULTADOS",
-                   "confronto": "B. PRÉ-JOGO"}
+                   "confronto": "B. PRÉ-JOGO", "tabela": "E. ESTATÍSTICAS"}
 
 
-def manual(handle: str | None, modelo: str, pre_jogo: bool = False) -> str:
+def manual(handle: str | None, modelo: str, pre_jogo: bool = False, resultados_do_dia: bool = False) -> str:
     pasta = MANUAIS.get((handle or "").lstrip("@").lower())
     s = _secoes(pasta) if pasta else {}
     if not s:
         return ""
     pega = lambda prefixo: next((v for k, v in s.items() if k.startswith(prefixo)), "")
     alvo = "B. PRÉ-JOGO" if pre_jogo else TIPO_POR_MODELO.get(modelo, "C. NOTÍCIAS")
+    if modelo == "rodada" and resultados_do_dia:
+        alvo = "D. RESULTADOS"
     m = re.search(r"^### " + re.escape(alvo) + r".*?(?=^### |\Z)", pega("5. TIPOS"), flags=re.M | re.S | re.I)
     partes = [pega("CORES OFICIAIS"), pega("1. IDENTIDADE"), pega("2. DIREÇÃO DE ARTE"), m.group(0) if m else ""]
     return "\n\n".join(p for p in partes if p)
@@ -135,7 +138,9 @@ CENAS = {
     "jogador": "Perfil de jogador: jogador em destaque, dados em blocos organizados.",
     "clube": "Notícia de clube: escudo grande do clube como protagonista, cenário na cor do clube.",
     "editorial": "Capa editorial de notícia: manchete enorme como protagonista, grafismo forte e coerente com o tema.",
-    "rodada": "Agenda: lista de jogos organizada e de leitura rápida, horários de Brasília, escudos ao lado dos nomes.",
+    "rodada": "Agenda do dia de um campeonato: jogos em ordem de horário (horário de Brasília), organizados e de leitura rápida, escudos ao lado dos nomes, logo da competição em destaque.",
+    "resultados": "Resultados do dia de um campeonato: placares em evidência, um jogo por linha, escudos ao lado dos nomes, logo da competição em destaque.",
+    "tabela": "Tabela de classificação: tabela editorial limpa e alinhada, uma linha por time, colunas bem separadas, escudos pequenos ao lado dos nomes, logo/identidade da competição; destaque sutil para o líder.",
     "noticia": "Capa editorial de notícia: manchete forte, imagem coerente com o tema.",
 }
 
@@ -173,10 +178,24 @@ def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list
     for f in (d.get("fatos") or [])[:4]:
         L.append(f'Bloco de dado: número "{_limpo(f.get("n"))}" com legenda "{_limpo(f.get("l"))}"')
     if d.get("jogos"):
-        L.append("Lista de jogos (uma linha por jogo):")
-        L += [f'  - "{_limpo(j.get("hora"))}"  "{_limpo(j.get("casa"))}" x "{_limpo(j.get("fora"))}"' for j in d["jogos"]]
+        L.append("Lista de jogos (uma linha por jogo, nesta ordem):")
+        for j in d["jogos"]:
+            if j.get("gols_casa") is not None:
+                pen = f' ({_limpo(j["penaltis"])})' if j.get("penaltis") else ""
+                L.append(f'  - "{_limpo(j.get("casa"))}" {j["gols_casa"]} x {j["gols_fora"]} "{_limpo(j.get("fora"))}"{pen}')
+            else:
+                L.append(f'  - "{_limpo(j.get("hora"))}"  "{_limpo(j.get("casa"))}" x "{_limpo(j.get("fora"))}"')
+    if d.get("linhas"):
+        L.append("Tabela (cabeçalho: \"#\", \"Time\", \"P\", \"J\", \"V\", \"SG\"), uma linha por time, nesta ordem:")
+        L += [f'  - "{r["pos"]}" "{_limpo(r["time"])}" P "{r["pts"]}" J "{r["j"]}" V "{r["v"]}" SG "{r["sg"]}"' for r in d["linhas"]]
+    if d.get("parte"):
+        L.append(f'Indicação discreta de página: "{d["parte"]}"')
 
     tem_foto = any(r.startswith("foto do jogador") for r in refs)
+    if any(r.startswith("foto do estádio") for r in refs):
+        partes_extra = ["Use a foto do estádio só como referência de ambiente (pode estilizar)."]
+    else:
+        partes_extra = []
     pessoa = ("Use a pessoa da foto de referência como o jogador: é uma fotografia real, conferida e licenciada. Preserve rosto, "
               "identidade, corpo e uniforme; não invente patrocínio, escudo ou número no uniforme; integre com luz coerente. "
               "É uma composição editorial, não pode parecer registro fotográfico de um lance real."
@@ -186,13 +205,14 @@ def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list
     escudos = ("Reproduza os escudos e logos das referências fielmente, sem deformar, redesenhar ou trocar cores."
                if any("escudo" in r or "logo da competição" in r for r in refs) else "Não desenhe escudos de clubes.")
     pre_jogo = modelo in ("resultado", "confronto") and d.get("gols_casa") is None
+    res_dia = modelo == "rodada" and any(j.get("gols_casa") is not None for j in d.get("jogos") or [])
     partes = [f"Crie a arte completa de um post para o perfil @{marca.get('handle', '')} ({marca.get('nome', '')})."]
-    m = manual(marca.get("handle"), modelo, pre_jogo)
+    m = manual(marca.get("handle"), modelo, pre_jogo, res_dia)
     if m:
         partes.append("MANUAL DA MARCA (siga; nesta operação você também escreve os textos da lista, e o logotipo oficial "
                       "é aplicado depois no rodapé):\n" + m)
     partes += [REGRAS.format(bg=marca.get("bg", "#0A0C09"), cor=marca.get("cor", "#95FF50")),
-               CENAS.get(modelo, CENAS["noticia"]), pessoa, escudos]
+               CENAS["resultados"] if res_dia else CENAS.get(modelo, CENAS["noticia"]), pessoa, escudos] + partes_extra
     if refs:
         partes.append("Imagens de referência, na ordem: " + "; ".join(f"imagem {i}: {r}" for i, r in enumerate(refs, 1)) + ".")
     partes.append("TEXTOS DA ARTE (os únicos permitidos):\n" + ("\n".join(L) or "(nenhum texto: arte só visual)"))
@@ -209,16 +229,25 @@ def esperados(d: dict) -> list[str]:
         out += [_limpo(x) for x in d.get(k) or []]
     for f in d.get("fatos") or []:
         out += [_limpo(f.get("n")), _limpo(f.get("l"))]
-    out += [f'{_limpo(j.get("hora"))} {_limpo(j.get("casa"))} x {_limpo(j.get("fora"))}' for j in d.get("jogos") or []]
+    for j in d.get("jogos") or []:
+        if j.get("gols_casa") is not None:
+            out.append(f'{_limpo(j.get("casa"))} {j["gols_casa"]} x {j["gols_fora"]} {_limpo(j.get("fora"))}')
+        else:
+            out.append(f'{_limpo(j.get("hora"))} {_limpo(j.get("casa"))} x {_limpo(j.get("fora"))}')
+    for r in d.get("linhas") or []:
+        out.append(f'{r["pos"]} {_limpo(r["time"])} P {r["pts"]} J {r["j"]} V {r["v"]} SG {r["sg"]}')
     return [x for x in out if x]
 
 
 # ----------------------------------------------------------- referências --
-async def referencias(d: dict) -> tuple[list[tuple[bytes, str]], list[str]]:
+async def referencias(d: dict, modelo: str = "") -> tuple[list[tuple[bytes, str]], list[str]]:
     pedidos: list[tuple[str, str]] = []
     if d.get("foto"):
-        nome = _limpo((d.get("jogador") or {}).get("nome") or d.get("legenda_jogador") or "")
-        pedidos.append((d["foto"], f"foto do jogador {nome}".strip()))
+        if d.get("jogador") or d.get("foto_tipo") == "jogador" or modelo in ("heroi", "destaque", "jogador"):
+            nome = _limpo((d.get("jogador") or {}).get("nome") or d.get("legenda_jogador") or "")
+            pedidos.append((d["foto"], f"foto do jogador {nome}".strip()))
+        else:
+            pedidos.append((d["foto"], "foto do estádio (referência de ambiente)"))
     for lado in ("casa", "fora"):
         if d.get(lado) and d.get(f"escudo_{lado}"):
             pedidos.append((d[f"escudo_{lado}"], f"escudo do {_limpo(d[lado])}"))
@@ -230,6 +259,9 @@ async def referencias(d: dict) -> tuple[list[tuple[bytes, str]], list[str]]:
         for lado in ("casa", "fora"):
             if j.get(f"escudo_{lado}"):
                 pedidos.append((j[f"escudo_{lado}"], f"escudo do {_limpo(j.get(lado))}"))
+    for r in (d.get("linhas") or [])[:15]:
+        if r.get("escudo"):
+            pedidos.append((r["escudo"], f"escudo do {_limpo(r.get('time'))}"))
     imgs, nomes = [], []
     for url, nome in pedidos[:16]:
         try:
@@ -321,12 +353,12 @@ async def revisar(img: bytes, d: dict) -> dict:
 # ---------------------------------------------------------------- principal --
 async def criar_arte(modelo: str, d: dict, marca: dict) -> tuple[bytes, list[str]]:
     """Devolve (jpeg 1080x1350 sem o rodapé, avisos). Levanta ArteErro se a OpenAI não devolver imagem."""
-    refs, nomes = await referencias(d)
+    refs, nomes = await referencias(d, modelo)
     avisos: list[str] = []
     correcoes: list[str] | None = None
     img = None
     try:
-        for tentativa in range(2):
+        for tentativa in range(TENTATIVAS):
             try:
                 img = await _chamar(briefing(modelo, d, marca, nomes, correcoes), refs)
             except ArteErro as e:

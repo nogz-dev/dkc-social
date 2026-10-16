@@ -116,3 +116,14 @@ escudos (nunca arte de outro veículo).
 
 Variáveis: `OPENAI_IMAGE_MODEL` (`gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE` (`1088x1360`),
 `OPENAI_IMAGENS_DIA` (trava, 400).
+
+## Publicação sem aprovação (desde 16/10/2026)
+
+Pedido do Nog: saem sozinhos (chave "Publicação automática" em Ajustes desliga tudo):
+- **Rodada do dia**: montada às 7h, agendada para as 9h; um slide por campeonato, jogos em ordem de horário.
+- **Resultados**: cada jogo principal assim que acaba + **Resultados do dia** (carrossel por campeonato) quando o
+  último jogo do dia termina (o do dia anterior fecha até 4h).
+- **Tabela de classificação** no fim de cada rodada: Brasileirão Série A, Champions (fase de liga), LaLiga e Premier.
+  Rodada acabou = todos os jogos dela terminaram (adiados não seguram) e o último foi há menos de 36h.
+  Robô em `app/robos/tabelas.py`, status em `/api/robos/tabelas`.
+- Se a revisão da arte achar erro depois de 3 tentativas da OpenAI, o post para na fila com aviso.

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{# Tabela de classificação (template de emergência: a arte normal é da OpenAI). #}
+{% block estilo %}
+.fundo{position:absolute;inset:0;background:radial-gradient(110% 70% at 80% 0%, color-mix(in srgb,var(--cor) 22%,#000) 0%, #050505 65%)}
+.manchete{position:absolute;left:52px;right:52px;top:150px;max-height:200px;z-index:5}
+.tab{position:absolute;left:44px;right:44px;top:330px;z-index:5;border-collapse:collapse;width:calc(100% - 88px);font-size:30px}
+.tab th{font-weight:700;font-size:22px;opacity:.7;text-align:center;padding:0 8px 10px}
+.tab th.t{text-align:left}
+.tab td{padding:13px 8px;border-top:1px solid rgba(255,255,255,.12);text-align:center;font-weight:600}
+.tab td.p{font-weight:900;font-style:italic;width:60px}
+.tab td.t{text-align:left;font-weight:700;display:flex;align-items:center;gap:14px}
+.tab td.t img{width:38px;height:38px;object-fit:contain}
+.tab td.pts{font-weight:900;color:var(--cor)}
+.parte{position:absolute;right:56px;top:66px;z-index:7;font-weight:700;font-size:24px;opacity:.7}
+{% endblock %}
+{% block corpo %}
+<div class="fundo"></div>
+<div class="fita"><span>{{ d.tag or 'Classificação' }}</span>{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
+{% if d.parte %}<div class="parte">{{ d.parte }}</div>{% endif %}
+<h1 class="manchete fit" data-max="84" data-min="48">{{ d.titulo|destaque }}</h1>
+<table class="tab"><tr><th>#</th><th class="t">Time</th><th>P</th><th>J</th><th>V</th><th>SG</th></tr>
+{% for r in d.linhas or [] %}<tr><td class="p">{{ r.pos }}</td><td class="t">{% if r.escudo %}<img src="{{ r.escudo }}" alt="">{% endif %}{{ r.time }}</td><td class="pts">{{ r.pts }}</td><td>{{ r.j }}</td><td>{{ r.v }}</td><td>{{ r.sg }}</td></tr>{% endfor %}
+</table>
+{% endblock %}

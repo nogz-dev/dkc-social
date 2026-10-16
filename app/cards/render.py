@@ -22,7 +22,7 @@ from PIL import Image
 from . import fotos, recorte
 
 AQUI = Path(__file__).resolve().parent
-MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi", "destaque", "confronto", "clube", "editorial", "arte")
+MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi", "destaque", "confronto", "clube", "editorial", "arte", "tabela")
 
 # ------------------------------------------------------------------ marcas --
 # Cada perfil posta com a própria identidade. Chave = @ do Instagram.
@@ -138,6 +138,8 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
     for j in d.get("jogos") or []:
         tarefas.append(opcional(j, "escudo_casa"))
         tarefas.append(opcional(j, "escudo_fora"))
+    for r in d.get("linhas") or []:
+        tarefas.append(opcional(r, "escudo", 120))
     await asyncio.gather(*tarefas)
     # cor da faixa: a do escudo do protagonista (vencedor/casa), senão a marca
     if not d.get("cor_faixa"):
@@ -194,6 +196,8 @@ class Renderizador:
         d = dict(dados)
         if d.get("jogos"):
             d["jogos"] = [dict(j) for j in d["jogos"]]
+        if d.get("linhas"):
+            d["linhas"] = [dict(r) for r in d["linhas"]]
         avisos = await _resolver_imagens(modelo, d)
         tpl = _env.get_template(f"{modelo}.html")
         return tpl.render(d=d, marca=marca_de(handle), fonte=fonte or d.get("fonte", ""), fontes=Markup(_fontes())), avisos
