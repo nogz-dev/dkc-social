@@ -99,18 +99,20 @@ referência; buscamos candidatas pelo nome (Wikimedia Commons e, com
 canal, boa para capa). Sem foto conferida: resultado vai para a fila (não sai
 sozinho) e notícia sai sem foto de jogador.
 
-## Visual pela OpenAI + manual da marca (desde 15/10/2026)
+## Arte 100% pela OpenAI (desde 16/10/2026)
 
-Segue `brands/seu-tipster/brand-guidelines.md` (manual oficial do Nog). A API de imagens não tem memória: o manual
-(cores, identidade, direção de arte e o tipo de post) vai junto em cada pedido do @seutipster.app.
+Decisão do Nog: os templates próprios não criam mais arte. A OpenAI (`gpt-image-2`, `OPENAI_API_KEY`) cria a imagem
+inteira, com textos, placar e escudos. O sistema entrega o briefing: o manual `brands/seu-tipster/brand-guidelines.md`
+(cores, identidade, direção de arte, tipo de post), os textos exatos e, como referência, a foto conferida do jogador e os
+escudos (nunca arte de outro veículo).
 
-- OpenAI (`gpt-image-2`, `OPENAI_API_KEY`): só o VISUAL — cenário, luz, textura e tratamento da foto real e
-  licenciada do jogador (rosto preservado). Nenhuma letra, número, escudo ou logo.
-- Renderizador próprio (templates): manchete, placar, estatísticas, data, horário, escudos e logotipo oficial.
-- Revisão pelo Claude: aprovada / necessita de correção (refaz 1x) / rejeitada. Falhou: template com a foto original + aviso.
-- Vale para noticia, destaque, jogador, resultado, heroi e rodada. Confronto, clube e editorial seguem só com escudos/tipografia.
-- Outros perfis não usam a OpenAI. Combinado mantido: resultado dos jogos principais com foto conferida sai sozinho
-  (chave "Resultado automático" em Ajustes desliga).
+- Revisão pelo Claude: texto/número errado, logo de emissora, escudo ou rosto deformado → a OpenAI refaz 1x.
+  Continuou com erro → a arte vai para a fila com o aviso "revisar a arte" (não publica sozinha).
+- Por cima da arte entra só o logotipo oficial, o @ e a fonte, no rodapé (o manual proíbe redesenhar o logo).
+- A OpenAI não devolveu imagem → o post não é criado, o robô tenta de novo e chega um push "Arte da OpenAI falhou"
+  (no máximo 1 a cada 30 min).
+- `/api/saude` → `imagens_openai`: quem faz a arte, se a chave funciona, imagens do dia e o último erro.
+- Emergência: `IMAGENS_OPENAI=0` no Railway volta aos templates.
 
 Variáveis: `OPENAI_IMAGE_MODEL` (`gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE` (`1088x1360`),
-`OPENAI_IMAGENS_DIA` (trava, 400), `IMAGENS_OPENAI=0` desliga. `/api/saude` mostra `imagens_openai`.
+`OPENAI_IMAGENS_DIA` (trava, 400).
