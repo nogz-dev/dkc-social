@@ -126,9 +126,18 @@ REGRAS = """Regras fixas desta arte:
 - Card vertical de Instagram 4:5, campanha esportiva premium, cinematográfica, com identidade própria (não imite nenhum canal ou emissora). Acabamento de designer humano, nada com cara de IA genérica (sem brilho plástico, pele de cera, objetos derretidos ou deformados).
 - Tipografia moderna e impactante, sans serif condensada pesada, hierarquia clara, textos grandes e legíveis.
 - Cores: base {bg}, destaque da marca {cor} e as cores do clube protagonista quando houver.
-- Reserve os 150 pixels de baixo como faixa escura LIMPA: o logotipo oficial é aplicado ali depois. Não desenhe o logotipo da marca em lugar nenhum.
 - PROIBIDO: logo, marca d'água ou nome de emissora, portal ou outro perfil; logo de casa de aposta; selo promocional; QR code; @ de perfis; texto que não esteja na lista; número inventado.
-- Escreva SOMENTE os textos da lista, exatamente como estão (acentos, nomes e números idênticos)."""
+- Escreva SOMENTE os textos da lista, exatamente como estão (acentos, nomes e números idênticos).
+
+GRADE, ALINHAMENTO E RESPIRO (obrigatório; a arte será reprovada se não cumprir). Tela de 1088 x 1360 px:
+- Margem de segurança: 88 px à esquerda e à direita, 96 px no topo. Nenhum texto, escudo, caixa ou etiqueta encosta nem passa dessas margens. Só o fundo/foto pode ir até a borda.
+- Faixa de baixo de 200 px totalmente livre e escura (sem texto, escudo, caixa ou elemento): o logotipo oficial entra ali depois. Não desenhe o logotipo da marca em lugar nenhum.
+- Tudo alinhado a UM eixo: ou centralizado no eixo vertical do meio, ou alinhado à margem esquerda. Não misture.
+- Nada torto: nenhum texto, caixa, etiqueta, moldura ou escudo inclinado, girado, em perspectiva ou com cantos chanfrados/assimétricos. Linhas horizontais retas, caixas retangulares com cantos iguais.
+- Espaçamento consistente: 40 a 56 px entre blocos; 24 px entre itens do mesmo bloco. Nenhum elemento encostado em outro. Texto nunca sobre escudo, rosto ou outro texto.
+- Elementos repetidos (escudos, caixas de dados, linhas de tabela) com o mesmo tamanho, mesma altura, mesma linha de base e distribuídos por igual.
+- Manchete em no máximo 3 linhas, com entrelinha confortável e largura máxima de 900 px. Menos elementos e mais respiro: na dúvida, tire grafismo.
+- Mínimo de 30% da área com respiro (fundo limpo, sem texto nem grafismo)."""
 
 CENAS = {
     "heroi": "Composição herói: jogador grande à direita sobre cenário na cor do clube, luz dramática; manchete à esquerda; placar num painel embaixo.",
@@ -314,15 +323,20 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
 
 
 # --------------------------------------------------------------- revisão --
-PROMPT_CONF = """Você é o revisor final de uma arte de Instagram de futebol antes de publicar.
+PROMPT_CONF = """Você é o diretor de arte e revisor final de uma arte de Instagram de futebol (1080 x 1350) antes de publicar.
 Textos que DEVEM aparecer, corretos (acentos, grafia e números idênticos; caixa alta vale):
 {lista}
 
 Responda SOMENTE com JSON:
-{{"ok": true|false, "erros": ["cada problema em até 12 palavras"]}}
-ok=false se: texto obrigatório faltando ou errado; número, placar ou nome diferente do pedido; texto legível inventado;
-logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo deformado; pessoa ou rosto deformado;
-algo escrito na faixa de 150 px de baixo; arte com cara amadora ou de IA genérica."""
+{{"ok": true|false, "erros": ["cada problema em até 14 palavras, dizendo onde está e como corrigir"]}}
+ok=false se houver QUALQUER um destes:
+TEXTO: texto obrigatório faltando ou errado; número, placar ou nome diferente do pedido; texto legível inventado.
+MARCA: logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo deformado; logotipo da marca desenhado.
+LAYOUT: elemento cortado ou encostado na borda (margem lateral menor que ~80 px ou topo menor que ~90 px); algo nos 190 px de baixo;
+elemento torto, inclinado, em perspectiva ou com cantos assimétricos; elementos desalinhados (fora de um eixo comum);
+elementos encostados uns nos outros ou sem respiro; caixas/escudos repetidos com tamanhos ou alturas diferentes;
+texto sobre escudo, rosto ou outro texto; manchete com mais de 3 linhas; arte poluída.
+PESSOA/QUALIDADE: rosto ou corpo deformado; cara de amador ou de IA genérica."""
 
 
 async def revisar(img: bytes, d: dict) -> dict:
