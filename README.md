@@ -127,3 +127,11 @@ Pedido do Nog: saem sozinhos (chave "Publicação automática" em Ajustes deslig
   Rodada acabou = todos os jogos dela terminaram (adiados não seguram) e o último foi há menos de 36h.
   Robô em `app/robos/tabelas.py`, status em `/api/robos/tabelas`.
 - Se a revisão da arte achar erro depois de 3 tentativas da OpenAI, o post para na fila com aviso.
+
+## Diretor de arte (desde 16/10/2026)
+
+`brands/diretor-de-arte.md` (briefing do Nog) vai em TODO pedido de arte, junto com o manual da marca, a grade de
+alinhamento e o "BRIEFING DESTA PEÇA" preenchido (marca, objetivo, público, tema, texto obrigatório, formato, arquivos,
+restrições). Antes de criar, o Claude define o **conceito** da publicação (objetivo, mensagem, emoção, ideia visual,
+protagonista, composição), igual para todas as páginas do carrossel e sem repetir os últimos 12 (`conceitos_recentes`
+na tabela config). A revisão usa o checklist do item 13 do briefing.
