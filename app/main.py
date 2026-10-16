@@ -623,6 +623,23 @@ async def _perfil(perfil_id: Optional[int], handle: Optional[str]) -> tuple[Opti
     return (r["id"], r["handle"]) if r else (None, None)
 
 
+async def jogadores_em_destaque(slides: list[dict], temporada: int | None = None) -> None:
+    """Rodada, pré-jogo e tabela: põe o artilheiro (de um dos times do slide) como jogador da arte.
+    A foto é buscada depois em renderizar_slides (foto conferida ou retrato oficial)."""
+    for sl in slides:
+        d = sl.get("dados") or {}
+        meta = d.pop("meta", None)
+        if not meta or d.get("jogador") or not meta.get("liga"):
+            continue
+        try:
+            a = await robo_resultados.artilheiro(meta["liga"], meta.get("temporada") or temporada,
+                                                 {t for t in meta.get("times") or [] if t})
+        except Exception:
+            a = None
+        if a:
+            d["jogador"] = a
+
+
 _falha_arte = {"em": 0.0}
 
 
@@ -648,7 +665,7 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     for sl in slides:  # "jogador" no slide = buscar foto conferida (API-Football + busca + checagem por IA)
         dd = sl.get("dados") or {}
         jg = dd.get("jogador")
-        if jg and not dd.get("foto"):
+        if jg and dd.get("foto_tipo") not in ("jogador", "retrato"):
             try:
                 fv = await foto_jogador.foto_verificada(jg.get("nome"), jg.get("clube"), jg.get("id"))
             except Exception:
@@ -656,6 +673,7 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
                 fv = None
             if fv:
                 dd["foto"], dd["credito_foto"] = fv["url"], fv["credito"]
+                dd["foto_tipo"] = "retrato" if fv.get("tipo") == "retrato" else "jogador"
                 if fv.get("aviso"):
                     avisos.append(fv["aviso"])
             else:
@@ -869,6 +887,7 @@ async def gerar_rodada(dia=None, forcar: bool = False) -> dict[str, Any]:
     pedido = robo_rodada.montar(jogos, dia, handle)
     if pedido:
         pedido["auto"] = True  # sai sem aprovação, no horário sugerido (9h)
+        await jogadores_em_destaque(pedido["slides"])
     if not pedido:
         await cfg_set(chave_dia, "sem_jogos")
         return {"ok": True, "jogos": 0, "motivo": "nenhum jogo das ligas prioritárias hoje"}
@@ -1007,6 +1026,7 @@ async def ciclo_tabelas_resumo() -> dict[str, Any]:
             pedido = robo_tabelas.montar_tabela(lid, rnd, await robo_tabelas.classificacao(lid, temp), handle)
             if not pedido:
                 continue
+            await jogadores_em_destaque(pedido["slides"], temp)
             pid, _av = await criar_post_de_slides(pedido, "robo")
             await cfg_set(chave, str(pid))
             feitos.append(pedido["titulo"])
@@ -1026,6 +1046,18 @@ async def ciclo_tabelas_resumo() -> dict[str, Any]:
         if not pedido:
             await cfg_set(chave, "sem_jogos")
             continue
+        # capa do resumo: o herói do jogo mais importante do dia (artilheiro do vencedor)
+        try:
+            top = robo_tabelas.jogos_do_resumo(js)[0]
+            th, ta = top["teams"]["home"], top["teams"]["away"]
+            venc = th["id"] if th.get("winner") else (ta["id"] if ta.get("winner") else None)
+            h = robo_resultados.heroi(await robo_resultados.gols(top["fixture"]["id"]), venc)
+            if h and h.get("jogador"):
+                pedido["slides"][0]["dados"]["jogador"] = {
+                    "nome": h["jogador"], "id": h.get("jogador_id"),
+                    "clube": robo_rodada.nome(th["name"] if h.get("time_id") == th["id"] else ta["name"])}
+        except Exception:
+            log.exception("[RESUMO] jogador da capa")
         pid, _av = await criar_post_de_slides(pedido, "robo")
         await cfg_set(chave, str(pid))
         feitos.append(pedido["titulo"])
@@ -1071,7 +1103,9 @@ async def foto_do_jogo(j: dict, gs: list[dict], pedido: dict) -> bool:
         f = None
     if not f:
         return False
-    d["foto"], d["credito_foto"], d["foco"], d["foto_tipo"] = f["url"], f["credito"], "center 18%", "jogador"
+    d["foto"], d["credito_foto"], d["foco"] = f["url"], f["credito"], "center 18%"
+    d["foto_tipo"] = "retrato" if f.get("tipo") == "retrato" else "jogador"
+    d["jogador"] = {"nome": h.get("jogador"), "id": h.get("jogador_id"), "clube": clube}
     return True
 
 
@@ -1278,8 +1312,10 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     except Exception:
         log.exception("[NOTICIAS] foto do jogador")
         fv = None
+    foto_tipo = None
     if fv:
         foto, credito = fv["url"], fv["credito"]
+        foto_tipo = "retrato" if fv.get("tipo") == "retrato" else "jogador"
     urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
     base_dados = {
         "tag": post.get("tag") or ("Urgente" if urgente else "Notícia"),
@@ -1300,6 +1336,8 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
         d = dict(base_dados)
         if com_foto and foto:
             d.update(foto=foto, credito_foto=credito, palavra=palavra or ((post.get("pessoa_foto") or "").split() or [""])[-1].upper()[:11] or None)
+            d["foto_tipo"] = foto_tipo
+            d["jogador"] = {"nome": post.get("pessoa_foto"), "clube": post.get("clube_foto") or post.get("clube")}
             if esc_clube:
                 d["escudo"] = esc_clube["logo"]
             return {"modelo": "destaque", "dados": d}
@@ -1681,6 +1719,7 @@ async def saude(request: Request, _=Depends(exige_login)):
     import importlib.util
     out["recorte"] = importlib.util.find_spec("rembg") is not None
     out["imagens_openai"] = {**openai_img.status(), "chave": await openai_img.testar_chave()}
+    out["fotos_jogadores"] = foto_jogador.STATS
     return out
 
 

@@ -83,6 +83,7 @@ def montar_tabela(lid: int, round_: str, linhas: list[dict], handle: str = "seut
         slides.append({"modelo": "tabela", "dados": {
             "tag": "Classificação", "tag2": info["curto"],
             "titulo": f"*{info['nome']}*" + (f" · após a {n}ª rodada" if n else ""),
+            "meta": {"liga": lid, "temporada": None, "times": [(parte[0].get("team") or {}).get("id")]} if k == 1 else None,
             "parte": f"{k}/{len(partes)}" if len(partes) > 1 else "",
             "linhas": [{
                 "pos": str(r.get("rank")),

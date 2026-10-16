@@ -221,8 +221,43 @@ async def checar(cand_bytes: bytes, nome: str, clube: str | None, ref_bytes: byt
 
 
 # ------------------------------------------------------------ principal --
+# diagnóstico (aparece em /api/saude) e cache de 24h por jogador
+STATS: dict = {"buscas": 0, "foto": 0, "retrato": 0, "nada": 0, "ultimas": []}
+_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+def _registrar(nome: str, resultado: str) -> None:
+    STATS[resultado] = STATS.get(resultado, 0) + 1
+    STATS["ultimas"] = ([f"{nome}: {resultado}"] + STATS["ultimas"])[:10]
+
+
+def _nao_e_placeholder(dados: bytes) -> bool:
+    """O retrato da API-Football às vezes é o ícone cinza de 'sem foto'."""
+    from PIL import ImageStat
+    im = Image.open(io.BytesIO(dados)).convert("RGB")
+    im.thumbnail((96, 96))
+    sat = ImageStat.Stat(im.convert("HSV")).mean[1]
+    tons = len(set(im.quantize(colors=64).getdata()))
+    return not (sat < 18 and tons < 40)
+
+
 async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id: int | None = None) -> dict | None:
-    """Devolve {"url", "credito", "nome"} de uma foto conferida, ou None."""
+    """Foto do jogador: {"url", "credito", "nome", "tipo": "foto"|"retrato", "aviso"} ou None.
+    1º foto conferida (Wikidata/Wikimedia/web + checagem por IA); 2º retrato oficial da API-Football
+    (rosto, confirmado pelo ID do jogador)."""
+    import time
+    chave = f"{_sem_acento(nome or '')}|{jogador_id or ''}|{_sem_acento(clube or '')}"
+    hit = _cache.get(chave)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    STATS["buscas"] += 1
+    res = await _foto_verificada(nome, clube, jogador_id)
+    _registrar(nome or str(jogador_id), (res or {}).get("tipo", "nada"))
+    _cache[chave] = (time.time(), res)
+    return res
+
+
+async def _foto_verificada(nome: str | None, clube: str | None, jogador_id: int | None) -> dict | None:
     ref = await referencia_api(nome, jogador_id)
     if not ref and not nome:
         return None
@@ -254,9 +289,15 @@ async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id
         log.info("[FOTO] %s · %s · %s", nome_busca, cnd["origem"], v)
         if not v.get("ok"):
             continue
-        achada = {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca, "aviso": None}
+        achada = {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca, "aviso": None, "tipo": "foto"}
         if not clube or v.get("camisa_do_clube") is not False:
             return achada
         if not reserva:
             reserva = {**achada, "aviso": f"foto de {nome_busca} com camisa de outro clube: confira"}
-    return reserva
+    if reserva:
+        return reserva
+    # sem foto conferida: retrato oficial da API-Football (jogador certo garantido pelo ID)
+    if ref and ref.get("foto_ref") and ref_bytes and _nao_e_placeholder(ref_bytes):
+        return {"url": ref["foto_ref"], "credito": "Foto: perfil oficial do jogador", "nome": nome_busca,
+                "aviso": None, "tipo": "retrato"}
+    return None

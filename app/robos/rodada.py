@@ -113,6 +113,12 @@ async def jogos_do_dia(dia: date) -> list[dict]:
     return out
 
 
+def _meta(j: dict) -> dict:
+    """Ids para o servidor escolher o jogador em destaque (não vira texto da arte)."""
+    return {"liga": j["league"]["id"], "temporada": j["league"].get("season"),
+            "times": [j["teams"]["home"].get("id"), j["teams"]["away"].get("id")]}
+
+
 def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict | None:
     """Monta o pedido de post (slides + legenda) no formato de /api/robo/cards."""
     if not jogos:
@@ -138,6 +144,7 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "foto": _foto_estadio(destaque), "foco": "center 45%",
         "tag": "Rodada do dia", "tag2": data_curta,
         "titulo": titulo, "fatos": fatos, "arrasta": len(ligas) > 0,
+        "meta": _meta(destaque),
     }}]
 
     for lid in ligas:
@@ -155,6 +162,7 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
                     "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
                     "gols_casa": None, "hora": hora(j["fixture"]["date"]),
                     "info": " · ".join(x for x in (IDS[lid]["nome"], fs, estadio) if x),
+                    "meta": _meta(j),
                 }})
             continue
         n_partes = -(-len(lista) // 8)          # divide igual: 9 jogos viram 5 + 4, não 8 + 1

@@ -135,3 +135,11 @@ seguido do manual da marca, das áreas seguras do formato e do "BRIEFING DESTA P
 público, tema, texto obrigatório, dados, formato/página do carrossel, arquivos oficiais, restrições). Conceito, composição,
 tipografia e revisão estética são decisão dela. Nós (Claude) só entregamos a informação e conferimos fatos e defeitos
 objetivos: texto/número/escudo errado, logo de terceiros, corte na borda, elemento torto, texto ilegível.
+
+## Fotos de jogadores (desde 16/10/2026)
+
+- Fonte, em ordem: foto conferida (Wikidata → Wikimedia → busca web se houver `BRAVE_API_KEY`, sempre com checagem por
+  IA: mesma pessoa, foto limpa) → **retrato oficial da API-Football** (rosto, jogador garantido pelo ID). Cache de 24h.
+- Jogador entra em: notícias (protagonista), resultado (herói do jogo), **capa da Rodada e pré-jogos** (artilheiro de um
+  dos times), **capa da tabela** (artilheiro do líder) e **capa dos Resultados do dia** (herói do jogo mais importante).
+- `/api/saude` → `fotos_jogadores`: buscas, quantas acharam foto/retrato/nada e as últimas.

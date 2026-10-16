@@ -217,12 +217,17 @@ def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list
              capa: list[str] | None = None, pagina: tuple[int, int] = (1, 1)) -> str:
     tipo = _tipo(modelo, d)
     tem_foto = any(r.startswith("foto do jogador") for r in refs)
+    tem_retrato = any(r.startswith("retrato oficial") for r in refs)
     arquivos = ["logotipo oficial (aplicado depois por nós no rodapé: NÃO desenhe nenhuma versão do logotipo)"]
     arquivos += refs
     if tem_foto:
         imagem = ("A foto do jogador é real, conferida e licenciada: preserve rosto, identidade, corpo e uniforme; recorte limpo "
                   "(cabelo, mãos, uniforme); não invente patrocínio, escudo ou número; integre com luz coerente; é composição "
                   "editorial, não pode parecer registro fotográfico de um lance real.")
+    elif tem_retrato:
+        imagem = ("Há só o retrato oficial (rosto) do jogador: ele é o jogador desta peça. Mantenha o rosto e a identidade "
+                  "fiéis ao retrato; mostre-o em retrato/busto editorial, com o uniforme do clube indicado e sem inventar "
+                  "patrocínio, número ou lance de jogo; não pode parecer registro fotográfico de um lance real.")
     else:
         imagem = ("Não há foto de atleta: não desenhe nenhuma pessoa reconhecível nem jogador fictício. Resolva com tipografia, "
                   "cor, escudos e grafismo; estádio, grama, fumaça ou luz só se servirem ao conceito.")
@@ -287,7 +292,10 @@ def esperados(d: dict) -> list[str]:
 # ----------------------------------------------------------- referências --
 async def referencias(d: dict, modelo: str = "") -> tuple[list[tuple[bytes, str]], list[str]]:
     pedidos: list[tuple[str, str]] = []
-    if d.get("foto"):
+    if d.get("foto") and d.get("foto_tipo") == "retrato":
+        nome = _limpo((d.get("jogador") or {}).get("nome") or d.get("legenda_jogador") or "")
+        pedidos.append((d["foto"], f"retrato oficial do jogador {nome} (pequeno, só o rosto)".strip()))
+    elif d.get("foto"):
         if d.get("jogador") or d.get("foto_tipo") == "jogador" or modelo in ("heroi", "destaque", "jogador"):
             nome = _limpo((d.get("jogador") or {}).get("nome") or d.get("legenda_jogador") or "")
             pedidos.append((d["foto"], f"foto do jogador {nome}".strip()))
@@ -310,7 +318,7 @@ async def referencias(d: dict, modelo: str = "") -> tuple[list[tuple[bytes, str]
     imgs, nomes = [], []
     for url, nome in pedidos[:16]:
         try:
-            dados, _ = await fotos.baixar(url, 1536 if nome.startswith("foto") else 512)
+            dados, _ = await fotos.baixar(url, 1536 if nome.startswith("foto do jogador") else 512)
             im = Image.open(io.BytesIO(dados))
             buf = io.BytesIO()
             im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB").save(buf, "PNG")
@@ -418,7 +426,7 @@ async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None =
                 img = await _chamar(briefing(modelo, d, marca, nomes, correcoes, capa, pagina), refs)
             except ArteErro as e:
                 msg = str(e).lower()
-                if refs and nomes and nomes[0].startswith("foto") and ("moderation" in msg or "safety" in msg):
+                if refs and nomes and nomes[0].startswith(("foto do jogador", "retrato")) and ("moderation" in msg or "safety" in msg):
                     refs, nomes = refs[1:], nomes[1:]
                     avisos.append("OpenAI recusou usar a foto do jogador: arte sem jogador")
                     continue

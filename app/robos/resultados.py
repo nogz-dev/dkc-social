@@ -239,3 +239,29 @@ def montar(j: dict, gs: list[dict], handle: str = "seutipster.app") -> dict:
         "legenda": "\n\n".join(blocos), "fonte": "API-Football",
         "slides": [{"modelo": "resultado", "dados": dados}],
     }
+
+
+_artilheiros: dict[tuple, tuple[float, list]] = {}
+
+
+async def artilheiro(liga: int, temporada: int, times: set[int] | None = None) -> dict | None:
+    """Artilheiro da liga (de um dos times, se informado): {"nome", "id", "clube"}. Cache de 6h por liga."""
+    import time
+    hit = _artilheiros.get((liga, temporada))
+    if hit and time.time() - hit[0] < 21600:
+        lista = hit[1]
+    else:
+        try:
+            d = await _get("players/topscorers", {"league": liga, "season": temporada})
+        except Exception:
+            return None
+        lista = d.get("response") or []
+        _artilheiros[(liga, temporada)] = (time.time(), lista)
+    for it in lista:
+        p, st = it.get("player") or {}, (it.get("statistics") or [{}])[0]
+        time_id = (st.get("team") or {}).get("id")
+        if times and time_id not in times:
+            continue
+        return {"nome": nome_camisa(p.get("name") or ""), "id": p.get("id"),
+                "clube": rodada.nome((st.get("team") or {}).get("name") or "")}
+    return None
