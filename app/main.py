@@ -667,18 +667,17 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     # ARTE: responsabilidade da OpenAI (decisão do Nog, 16/10/2026). Os templates só voltam com IMAGENS_OPENAI=0.
     if not openai_img.desligado():
         marca = marca_de(handle)
-        # "comece pelo conceito": uma ideia visual por publicação, sem repetir as últimas
-        try:
-            recentes = json.loads(await cfg_get("conceitos_recentes") or "[]")
-        except ValueError:
-            recentes = []
-        conceito = await openai_img.conceito(slides, marca, recentes)
-        if conceito and conceito.get("resumo"):
-            await cfg_set("conceitos_recentes", json.dumps(([str(conceito["resumo"])[:80]] + recentes)[:12], ensure_ascii=False))
+        # a OpenAI é a diretora de arte: ela define conceito e composição; nós entregamos o briefing
         n = len(slides)
-        artes = await asyncio.gather(*(openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca, conceito, (i, n))
-                                       for i, sl in enumerate(slides, 1)),
-                                     return_exceptions=True)
+        capa = openai_img.textos(slides[0].get("dados") or {}) if n > 1 else None
+        # carrossel: a capa sai primeiro e vai como referência para as outras páginas (continuidade visual)
+        primeira = await asyncio.gather(openai_img.criar_arte(slides[0]["modelo"], slides[0].get("dados") or {}, marca,
+                                                              None, (1, n)), return_exceptions=True)
+        capa_img = primeira[0][0] if not isinstance(primeira[0], BaseException) else None
+        artes = primeira + list(await asyncio.gather(
+            *(openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca, capa, (i, n), capa_img)
+              for i, sl in enumerate(slides[1:], 2)),
+            return_exceptions=True))
         falhas = [(i, a) for i, a in enumerate(artes, 1) if isinstance(a, BaseException)]
         if falhas:
             msg = "; ".join(f"slide {i}: {str(a)[:160]}" for i, a in falhas)

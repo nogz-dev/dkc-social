@@ -129,17 +129,12 @@ REGRAS = """Regras fixas desta arte:
 - PROIBIDO: logo, marca d'água ou nome de emissora, portal ou outro perfil; logo de casa de aposta; selo promocional; QR code; @ de perfis; texto que não esteja na lista; número inventado.
 - Escreva SOMENTE os textos da lista, exatamente como estão (acentos, nomes e números idênticos).
 
-GRADE, ALINHAMENTO E RESPIRO (obrigatório; a arte será reprovada se não cumprir). Tela de 1088 x 1360 px:
-- Margem de segurança: 88 px à esquerda e à direita, 96 px no topo. Nenhum texto, escudo, caixa ou etiqueta encosta nem passa dessas margens. Só o fundo/foto pode ir até a borda.
-- Faixa de baixo de 200 px totalmente livre e escura (sem texto, escudo, caixa ou elemento): o logotipo oficial entra ali depois. Não desenhe o logotipo da marca em lugar nenhum.
-- Tudo alinhado a UM eixo: ou centralizado no eixo vertical do meio, ou alinhado à margem esquerda. Não misture.
-- Nada torto: nenhum texto, caixa, etiqueta, moldura ou escudo inclinado, girado, em perspectiva ou com cantos chanfrados/assimétricos. Linhas horizontais retas, caixas retangulares com cantos iguais.
-- Espaçamento consistente: 40 a 56 px entre blocos; 24 px entre itens do mesmo bloco. Nenhum elemento encostado em outro. Texto nunca sobre escudo, rosto ou outro texto.
-- Elementos repetidos (escudos, caixas de dados, linhas de tabela) com o mesmo tamanho, mesma altura, mesma linha de base e distribuídos por igual.
-- Manchete em no máximo 3 linhas, com entrelinha confortável e largura máxima de 900 px. Menos elementos e mais respiro: na dúvida, tire grafismo.
-- Mínimo de 30% da área com respiro (fundo limpo, sem texto nem grafismo)."""
+ÁREAS SEGURAS DESTE FORMATO (tela de 1088 x 1360 px):
+- Margem de segurança: 88 px nas laterais e 96 px no topo. Nenhum texto, escudo, caixa ou etiqueta encosta nem passa dessas margens; só fundo/foto vai até a borda.
+- Faixa de baixo de 200 px livre e escura (sem texto, escudo ou caixa): o logotipo oficial é aplicado ali depois. Não desenhe o logotipo em lugar nenhum.
+- Nada torto ou inclinado (textos, caixas, etiquetas, molduras, escudos), nada encostado (sem tangências) e elementos repetidos com o mesmo tamanho e a mesma linha de base."""
 
-CENAS = {  # função de cada formato (o conceito de cada peça vem da etapa de conceito)
+CENAS = {  # função de cada formato (o conceito de cada peça é decisão da OpenAI, a diretora de arte)
     "heroi": "Resultado com protagonista: o jogador decisivo + placar.",
     "destaque": "Notícia com jogador protagonista.",
     "resultado": "Resultado de partida: placar confirmado em evidência, escudos, destaque para o vencedor.",
@@ -219,7 +214,7 @@ def _tipo(modelo: str, d: dict) -> str:
 
 
 def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list[str] | None = None,
-             conceito: dict | None = None, pagina: tuple[int, int] = (1, 1)) -> str:
+             capa: list[str] | None = None, pagina: tuple[int, int] = (1, 1)) -> str:
     tipo = _tipo(modelo, d)
     tem_foto = any(r.startswith("foto do jogador") for r in refs)
     arquivos = ["logotipo oficial (aplicado depois por nós no rodapé: NÃO desenhe nenhuma versão do logotipo)"]
@@ -249,77 +244,26 @@ def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list
     if m:
         partes.append("MANUAL DA MARCA (nesta operação você escreve os textos; o logotipo oficial é aplicado depois):\n" + m)
     partes.append(REGRAS.format(bg=marca.get("bg", "#0A0C09"), cor=marca.get("cor", "#95FF50")))
-    if conceito:
-        partes.append("CONCEITO DESTA PEÇA (definido pela direção editorial; execute):\n" +
-                      "\n".join(f"- {rot}: {conceito[c]}" for c, rot in (
-                          ("objetivo", "Objetivo"), ("mensagem", "Mensagem que o público entende primeiro"), ("emocao", "Emoção"),
-                          ("ideia_visual", "Ideia visual"), ("protagonista", "Protagonista"), ("composicao", "Composição"),
-                          ("evitar", "Evitar nesta peça")) if conceito.get(c)))
     briefing_peca = [
         f"Marca: {marca.get('nome', '')} (@{marca.get('handle', '')})",
         f"Objetivo da publicação: {CENAS.get(tipo, CENAS['noticia'])}",
         "Público: torcedores brasileiros de futebol que acompanham o perfil no celular",
         f"Tema: {_limpo(d.get('titulo')) or _limpo(d.get('tag'))}",
         "Texto obrigatório (o ÚNICO texto permitido, exatamente assim):\n" + ("\n".join(textos(d)) or "(nenhum)"),
-        f"Formato e dimensões: {formato}. Margens e faixa livre conforme a grade acima.",
+        f"Formato e dimensões: {formato}. Respeite as áreas seguras acima.",
         "Arquivos oficiais disponíveis (imagens de referência, na ordem): " + "; ".join(
             f"{i}) {r}" if i else r for i, r in enumerate(arquivos)),
         f"Imagens: {imagem} {escudos}",
         "Chamada para ação: nenhuma na arte (fica na legenda)",
+        *([f"Carrossel: esta é a página {k} de {n}. Capa (página 1): " + " | ".join(capa)] if capa and k > 1 else []),
         "Restrições: nada de emissora/portal/outro perfil, casa de aposta, selos, @, QR code, número ou texto inventado.",
     ]
     partes.append("BRIEFING DESTA PEÇA:\n" + "\n".join(briefing_peca))
     if correcoes:
         partes.append("A versão anterior foi reprovada na revisão. Corrija todos os pontos:\n- " + "\n- ".join(correcoes))
-    partes.append("Entregue a arte final. Critério final: cada elemento tem uma função; se remover melhora a clareza, remova.")
+    partes.append("Você é o diretor de arte desta peça: defina o conceito (item 2), a composição e a tipografia, revise (item 13) "
+                  "e entregue a arte final. Critério final: cada elemento tem uma função; se remover melhora a clareza, remova.")
     return "\n\n".join(partes)
-
-
-# --------------------------------------------------------------- conceito --
-PROMPT_CONCEITO = """Você é a direção editorial de arte do perfil @{handle} (futebol, Instagram). Antes da criação visual, defina o CONCEITO desta publicação.
-Tipo: {tipo}. Páginas: {paginas}.
-Conteúdo (dados confirmados):
-{conteudo}
-
-Conceitos usados nas últimas publicações (NÃO repita o mesmo enquadramento, distribuição ou recurso):
-{recentes}
-
-Regras: o tema define as decisões visuais (rivalidade pede tensão/oposição; conquista pede escala/celebração; análise pede clareza
-editorial; curiosidade pede humor/surpresa). Um protagonista só. Nada de efeitos gratuitos (fumaça, fogo, raios, neon, partículas,
-estádio de fundo) se não servirem à ideia. Sem foto de atleta disponível = {foto}.
-Responda SOMENTE com JSON, frases curtas e concretas, em português:
-{{"objetivo": "...", "mensagem": "...", "emocao": "...", "ideia_visual": "a ideia específica desta peça",
- "protagonista": "...", "composicao": "como os elementos se organizam (posições, escala, eixo)", "evitar": "...",
- "resumo": "até 8 palavras para lembrar este conceito"}}"""
-
-
-async def conceito(slides: list[dict], marca: dict, recentes: list[str]) -> dict | None:
-    """Etapa 'comece pelo conceito' (Claude): uma ideia visual por publicação, igual em todas as páginas."""
-    k = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not k or not slides:
-        return None
-    d0 = slides[0].get("dados") or {}
-    conteudo = []
-    for i, sl in enumerate(slides, 1):
-        conteudo.append(f"Página {i} ({sl.get('modelo')}):\n" + "\n".join(textos(sl.get("dados") or {})))
-    tem_foto = bool(d0.get("foto")) and (d0.get("jogador") or d0.get("foto_tipo") == "jogador"
-                                         or slides[0].get("modelo") in ("heroi", "destaque", "jogador"))
-    prompt = PROMPT_CONCEITO.format(
-        handle=marca.get("handle", ""), tipo=_tipo(slides[0].get("modelo", ""), d0), paginas=len(slides),
-        conteudo="\n\n".join(conteudo)[:6000], recentes="\n".join(f"- {r}" for r in recentes[:8]) or "- (nenhum)",
-        foto="há foto real do jogador para usar" if tem_foto else "resolver sem pessoa (tipografia, cor, escudos, grafismo)")
-    try:
-        async with httpx.AsyncClient(timeout=60) as c:
-            r = await c.post(os.getenv("ANTHROPIC_BASE", "https://api.anthropic.com") + "/v1/messages",
-                             headers={"x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                             json={"model": MODELO_CONF, "max_tokens": 700, "messages": [{"role": "user", "content": prompt}]})
-        txt = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
-        m = re.search(r"\{.*\}", txt, re.S)
-        v = json.loads(m.group(0)) if m else None
-    except Exception as e:
-        log.info("[ARTE] conceito falhou: %s", e)
-        return None
-    return v if isinstance(v, dict) else None
 
 
 def esperados(d: dict) -> list[str]:
@@ -415,23 +359,18 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
 
 
 # --------------------------------------------------------------- revisão --
-PROMPT_CONF = """Você é o diretor de arte e revisor final de uma arte de Instagram de futebol (1080 x 1350) antes de publicar.
+PROMPT_CONF = """Você confere uma arte de Instagram de futebol (1080 x 1350) antes de publicar. A direção de arte é de outro profissional:
+NÃO julgue gosto, conceito ou estilo. Confira só fatos e defeitos objetivos.
 Textos que DEVEM aparecer, corretos (acentos, grafia e números idênticos; caixa alta vale):
 {lista}
 
 Responda SOMENTE com JSON:
 {{"ok": true|false, "erros": ["cada problema em até 14 palavras, dizendo onde está e como corrigir"]}}
-ok=false se houver QUALQUER um destes:
-TEXTO: texto obrigatório faltando ou errado; número, placar ou nome diferente do pedido; texto legível inventado.
-MARCA: logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo deformado; logotipo da marca desenhado.
-LAYOUT: elemento cortado ou encostado na borda (margem lateral menor que ~80 px ou topo menor que ~90 px); algo nos 190 px de baixo;
-elemento torto, inclinado, em perspectiva ou com cantos assimétricos; elementos desalinhados (fora de um eixo comum);
-elementos encostados uns nos outros ou sem respiro; caixas/escudos repetidos com tamanhos ou alturas diferentes;
-texto sobre escudo, rosto ou outro texto; manchete com mais de 3 linhas; arte poluída.
-PESSOA/QUALIDADE: rosto ou corpo deformado; recorte sujo (cabelo, mãos, uniforme); cara de amador ou de IA genérica.
-DIREÇÃO DE ARTE (olhe também como miniatura de celular): a mensagem principal não aparece primeiro; não há protagonista claro
-ou tudo chama atenção igual; elemento competindo sem necessidade ou sem função; texto secundário ilegível no celular;
-letras deformadas, esticadas ou com contorno/sombra para compensar; efeitos gratuitos (fumaça, fogo, raios, neon) sem relação com o tema."""
+ok=false só se houver:
+DADOS: texto obrigatório faltando ou errado; número, placar ou nome diferente do pedido; texto legível inventado.
+MARCA: logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo deformado ou trocado; logotipo da marca desenhado.
+DEFEITOS: texto ou escudo cortado na borda ou fora da margem; algo escrito nos 190 px de baixo; elementos tortos/inclinados;
+texto sobre outro texto, escudo ou rosto; texto ilegível no celular; letras deformadas; rosto ou corpo deformado."""
 
 
 async def revisar(img: bytes, d: dict) -> dict:
@@ -460,17 +399,23 @@ async def revisar(img: bytes, d: dict) -> dict:
 
 
 # ---------------------------------------------------------------- principal --
-async def criar_arte(modelo: str, d: dict, marca: dict, conceito: dict | None = None,
-                     pagina: tuple[int, int] = (1, 1)) -> tuple[bytes, list[str]]:
+async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None = None,
+                     pagina: tuple[int, int] = (1, 1), capa_img: bytes | None = None) -> tuple[bytes, list[str]]:
     """Devolve (jpeg 1080x1350 sem o rodapé, avisos). Levanta ArteErro se a OpenAI não devolver imagem."""
     refs, nomes = await referencias(d, modelo)
+    if capa_img and len(refs) < 16:  # páginas internas do carrossel enxergam a capa pronta (continuidade visual)
+        buf = io.BytesIO()
+        Image.open(io.BytesIO(capa_img)).convert("RGB").save(buf, "PNG")
+        refs.append((buf.getvalue(), "image/png"))
+        nomes.append("capa já pronta deste carrossel: mantenha a mesma linguagem visual (paleta, tipografia, grafismos), "
+                     "sem copiar os textos dela")
     avisos: list[str] = []
     correcoes: list[str] | None = None
     img = None
     try:
         for tentativa in range(TENTATIVAS):
             try:
-                img = await _chamar(briefing(modelo, d, marca, nomes, correcoes, conceito, pagina), refs)
+                img = await _chamar(briefing(modelo, d, marca, nomes, correcoes, capa, pagina), refs)
             except ArteErro as e:
                 msg = str(e).lower()
                 if refs and nomes and nomes[0].startswith("foto") and ("moderation" in msg or "safety" in msg):
