@@ -147,42 +147,21 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "meta": _meta(destaque),
     }}]
 
-    for lid in ligas:
-        lista = por_liga[lid]
-        if len(lista) <= 2:
-            # poucos jogos: cada um ganha um card de destaque (escudos grandes + horário)
-            for j in lista:
-                if len(slides) >= 10:
-                    break
-                fs = fase(j["league"].get("round", ""))
-                estadio = ((j.get("fixture") or {}).get("venue") or {}).get("name")
-                slides.append({"modelo": "resultado", "dados": {
-                    "foto": _foto_estadio(j), "tag": "Hoje", "tag2": IDS[lid]["curto"],
-                    "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
-                    "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
-                    "gols_casa": None, "hora": hora(j["fixture"]["date"]),
-                    "info": " · ".join(x for x in (IDS[lid]["nome"], fs, estadio) if x),
-                    "meta": _meta(j),
-                }})
-            continue
-        n_partes = -(-len(lista) // 8)          # divide igual: 9 jogos viram 5 + 4, não 8 + 1
-        tam = -(-len(lista) // n_partes)
-        partes = [lista[i:i + tam] for i in range(0, len(lista), tam)]
-        for n, parte in enumerate(partes):
-            if len(slides) >= 10:
-                break
-            fs = fase(parte[0]["league"].get("round", ""))
-            sufixo = f" ({n + 1}/{len(partes)})" if len(partes) > 1 else ""
-            slides.append({"modelo": "rodada", "dados": {
-                "foto": _foto_estadio(parte[0]), "tag": IDS[lid]["curto"],
-                "titulo": f"*{IDS[lid]['nome']}*" + (f" · {fs}" if fs else "") + sufixo,
-                "data": data_longa, "logo_liga": parte[0]["league"].get("logo"),
-                "jogos": [{
-                    "hora": hora(j["fixture"]["date"]),
-                    "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
-                    "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
-                } for j in parte],
-            }})
+    # Rodada curta (pedido do Nog, 17/10/2026, para economizar): capa + 1 página por campeonato,
+    # sem card individual de pré-jogo; no máximo 4 campeonatos (5 páginas) e 10 jogos por página.
+    for lid in ligas[:int(os.getenv("RODADA_MAX_LIGAS", "4"))]:
+        lista = por_liga[lid][:10]
+        fs = fase(lista[0]["league"].get("round", ""))
+        slides.append({"modelo": "rodada", "dados": {
+            "foto": _foto_estadio(lista[0]), "tag": IDS[lid]["curto"],
+            "titulo": f"*{IDS[lid]['nome']}*" + (f" · {fs}" if fs else ""),
+            "data": data_longa, "logo_liga": lista[0]["league"].get("logo"),
+            "jogos": [{
+                "hora": hora(j["fixture"]["date"]),
+                "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
+                "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
+            } for j in lista],
+        }})
 
     # legenda (regras da skill: gancho nos 125 primeiros caracteres, 3 a 5 hashtags, número concreto)
     linhas = []

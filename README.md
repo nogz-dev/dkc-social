@@ -166,3 +166,8 @@ Notícia que vai para aprovação chega na fila com prévia dos templates (sem c
 o Nog aprova: a arte é gerada (com revisão) antes de mandar para o Publora e substitui a prévia. Se falhar, o post fica
 com erro e pode ser aprovado de novo. Notícia que sai sozinha (nota 8+ de clube grande) já nasce com a arte da OpenAI.
 `ARTE_AO_APROVAR=0` volta ao jeito antigo.
+
+## Rodada curta (desde 17/10/2026)
+
+Capa + 1 página por campeonato (até 10 jogos, em ordem de horário), sem card individual de pré-jogo; no máximo 4
+campeonatos = 5 páginas (`RODADA_MAX_LIGAS`). A legenda continua citando todos os campeonatos do dia.
