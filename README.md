@@ -152,7 +152,7 @@ objetivos: texto/número/escudo errado, logo de terceiros, corte na borda, eleme
   (o Nog vê na fila); automáticos = até 2 tentativas; referências menores (escudo 256 px, jogador 1024 px, até 10).
 - Claude: instruções fixas da triagem/redação em cache de 1h; conferência de foto com Haiku, até 5 candidatas,
   resultado guardado por 7 dias.
-- Notícias mais seletivas (pedido do Nog, 17/10): nota mínima 7 e no máximo 30 por dia (nota 9+ urgente fura o teto).
+- Notícias só relevantes (pedido do Nog, 17/10): nota da IA 7+ (fontes extras não salvam notícia fraca; estrela/apostas só sobem nota se a notícia já for média), no máximo 30 por dia (9+ fura). Nota 8+ de clube grande do Brasileirão A, LaLiga ou Premier sai sem aprovação (rumor não).
 - Variáveis: `OPENAI_TENTATIVAS`, `OPENAI_RESERVA_AUTO`, `OPENAI_MAX_REFERENCIAS`, `FOTO_MAX_CANDIDATAS`, `FOTO_MODELO_VISAO`.
 
 ## Resultados: só o resumo geral (desde 17/10/2026)

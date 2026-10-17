@@ -1296,6 +1296,8 @@ async def ciclo_noticias(forcar: bool = False) -> dict[str, Any]:
             ne = _nota_efetiva(cnd["nota"], cnd["n_fontes"])
             if ne < robo_noticias.NOTA_MIN:
                 break
+            if cnd["nota"] < robo_noticias.NOTA_MIN:  # só relevante: várias fontes repetindo não salvam notícia fraca
+                continue
             if robo_noticias.TETO_DIA and feitos_hoje >= robo_noticias.TETO_DIA and ne < robo_noticias.NOTA_URGENTE:
                 break
             if silencio and ne < robo_noticias.NOTA_URGENTE:

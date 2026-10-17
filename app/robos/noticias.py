@@ -300,6 +300,9 @@ PRIORIDADES DA CASA (o dono do perfil pediu, valem mais que o resto):
 - "Here we go" ou informação atribuída a Fabrizio Romano sobre clube grande: nota mínima 8 (é transferência praticamente fechada).
 - O objetivo do perfil é dar a notícia ANTES dos outros canais. Rumor forte de veículo conhecido entra (vai como "segundo X"); só descarte fofoca sem fonte ou de site obscuro.
 - Uma notícia relevante dada por um só portal vale tanto quanto uma repetida em vários. Não rebaixe por exclusividade.
+- SÓ NOTÍCIA RELEVANTE (regra do dono, 17/10/2026): as prioridades acima dizem QUAIS assuntos interessam, mas não salvam notícia fraca.
+  Notícia fraca de clube grande ou de estrela (treino, declaração protocolar, aniversário, curiosidade, "pode", "estuda",
+  "monitora", "interesse" sem negociação real, especulação sem fonte forte, repercussão requentada) fica entre 3 e 5.
 
 Critérios de nota:
 - 9–10: bomba que todo torcedor vai comentar hoje (contratação/saída de craque ou de clube grande, demissão de técnico de grande, lesão grave de estrela antes de jogo decisivo, escândalo).
@@ -376,12 +379,12 @@ _APOSTAS = ("bets", " bet ", "apostas", "casas de aposta", "secretaria de prêmi
 
 def reforco(texto: str, nota: float, tipo: str | None) -> float:
     t = f" {texto.lower()} "
-    if any(k in t for k in _ESTRELAS):
+    if any(k in t for k in _ESTRELAS) and nota >= 5:  # estrela não salva notícia fraca
         nota = max(nota, 7.0)
     # "Here we go" do Fabrizio Romano = transferência fechada, é o furo que todo mundo vai repetir
     if "here we go" in t or "fabrizio romano" in t or "romano" in t and any(k in t for k in ("transfer", "deal", "contrat")):
         nota = max(nota, 8.0)
-    if any(k in t for k in _APOSTAS) and any(k in t for k in ("bet", "aposta", "loteria", "igaming")):
+    if any(k in t for k in _APOSTAS) and any(k in t for k in ("bet", "aposta", "loteria", "igaming")) and nota >= 5:
         nota = max(nota, 7.0)
     if tipo != "resultado" and nota >= 3 and any(k in t for k in _CLUBES_BR):
         nota = max(nota, 6.0)
