@@ -28,6 +28,8 @@ import unicodedata
 from typing import Any
 
 import httpx
+
+from .. import uso_ia
 from PIL import Image
 
 from . import fotos
@@ -210,6 +212,7 @@ async def checar(cand_bytes: bytes, nome: str, clube: str | None, ref_bytes: byt
             r = await c.post(os.getenv("ANTHROPIC_BASE", "https://api.anthropic.com") + "/v1/messages",
                              headers={"x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                              json={"model": MODELO_VISAO, "max_tokens": 300, "messages": [{"role": "user", "content": conteudo}]})
+        await uso_ia.registrar(MODELO_VISAO, "foto_conferencia", r.json().get("usage"))
         txt = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
         m = re.search(r"\{.*\}", txt, re.S)
         v = json.loads(m.group(0)) if m else {}

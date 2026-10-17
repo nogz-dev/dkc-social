@@ -31,6 +31,7 @@ import httpx
 from PIL import Image
 
 from . import fotos
+from .. import uso_ia
 
 log = logging.getLogger("dkc.openai")
 
@@ -389,6 +390,7 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]], auto: bool = False
             await asyncio.sleep(min(max(espera, 15 * (tentativa + 1)), 90))
             continue
         raise ArteErro(f"OpenAI {r.status_code}: {code} {msg}".strip())
+    await uso_ia.registrar(MODELO, "arte_editar" if refs else "arte_gerar", r.json().get("usage"), imagens=1)
     b64 = ((r.json().get("data") or [{}])[0]).get("b64_json")
     if not b64:
         raise ArteErro("OpenAI não devolveu imagem")
@@ -429,6 +431,7 @@ async def revisar(img: bytes, d: dict) -> dict:
                                  {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                               "data": base64.b64encode(buf.getvalue()).decode()}},
                                  {"type": "text", "text": PROMPT_CONF.format(lista=lista)}]}]})
+        await uso_ia.registrar(MODELO_CONF, "arte_revisao", r.json().get("usage"))
         txt = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
         m = re.search(r"\{.*\}", txt, re.S)
         v = json.loads(m.group(0)) if m else {}

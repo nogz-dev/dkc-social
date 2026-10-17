@@ -23,6 +23,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import feedparser
 import httpx
 
+from .. import uso_ia
+
 log = logging.getLogger("dkc")
 
 UA = "Mozilla/5.0 (compatible; DKCSocial/1.0)"
@@ -235,6 +237,7 @@ async def claude(modelo: str, sistema: str, usuario: str, max_tokens: int = 2000
     d = r.json()
     txt = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
     uso = d.get("usage") or {}
+    await uso_ia.registrar(modelo, "noticias", uso)
     if d.get("stop_reason") == "max_tokens":
         log.warning("[IA] resposta cortada no limite de %s tokens (%s) — aproveitando o que veio completo", max_tokens, modelo)
     try:

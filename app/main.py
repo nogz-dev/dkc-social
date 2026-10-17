@@ -35,6 +35,7 @@ from .robos import rodada as robo_rodada
 from .robos import resultados as robo_resultados
 from .robos import tabelas as robo_tabelas
 from .cards import clubes, foto_jogador, fotos, openai_img
+from . import uso_ia
 from .cards.render import MODELOS, marca_de, renderizador
 
 log = logging.getLogger("dkc")
@@ -267,6 +268,8 @@ async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=8)
     async with pool.acquire() as c:
         await c.execute(SCHEMA)
+        await c.execute(uso_ia.TABELA)
+    uso_ia.pool = pool
     await vapid()
     await limpeza_unica()
     if not ADMIN_PASSWORD:
@@ -1808,6 +1811,10 @@ async def qg_status(_=Depends(exige_qg)):
                            "erro": _resultados_estado["erro"]},
             "pauta": {"ultima": _iso(_pauta_estado["ultima"]), "erro": _pauta_estado["erro"]},
         },
+        # Gestor de Tokens do QG: uso de IA por dia/modelo/origem (últimos 7 dias). Preço é calculado no QG.
+        "ia": {"dias": await uso_ia.resumo(7), "limite_imagens_dia": openai_img.LIMITE_DIA,
+               "qualidade_imagem": openai_img.QUALIDADE, "tamanho_imagem": openai_img.TAMANHO,
+               "tentativas_arte": openai_img.TENTATIVAS},
     }
 
 
