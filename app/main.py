@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -776,6 +777,22 @@ def _links(body: dict) -> list:
     return [v] if isinstance(v, str) else list(v)
 
 
+def _carimbar_previa(jpg: bytes) -> bytes:
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.open(io.BytesIO(jpg)).convert("RGB")
+    w, h = im.size
+    d = ImageDraw.Draw(im, "RGBA")
+    d.rectangle((0, 0, w, 150), fill=(253, 217, 24, 245))
+    fonte_dir = Path(__file__).parent / "cards" / "fonts"
+    f1 = ImageFont.truetype(str(fonte_dir / "Inter-Black.otf"), 54)
+    f2 = ImageFont.truetype(str(fonte_dir / "Inter-SemiBold.otf"), 30)
+    d.text((w // 2, 52), "PRÉVIA — NÃO É A ARTE FINAL", font=f1, fill=(10, 10, 10), anchor="mm")
+    d.text((w // 2, 112), "A OpenAI cria a arte de verdade quando você aprovar", font=f2, fill=(10, 10, 10), anchor="mm")
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=88)
+    return out.getvalue()
+
+
 async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
     perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
     # notícia que vai para aprovação: prévia com os templates (sem custo); a OpenAI só cria a arte se o Nog aprovar
@@ -785,6 +802,8 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
                                              foto_opcional=bool(body.get("foto_opcional")),
                                              auto=bool(body.get("auto")) or body.get("linha") == "resultado",
                                              usar_openai=not arte_depois)
+    if arte_depois:  # deixa claro na própria imagem que é só prévia (a arte de verdade sai ao aprovar)
+        midias = [(m, _carimbar_previa(d)) if m.startswith("image/") else (m, d) for m, d in midias]
     sug = body.get("sugerido_para")
     if isinstance(sug, str) and sug:
         try:
