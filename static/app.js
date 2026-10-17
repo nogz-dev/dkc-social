@@ -184,6 +184,7 @@ function renderLista() {
       <div class="body">
         <div class="meta"><span class="chip ${p.status}">${STATUS_TXT[p.status]}</span><span class="chip">${LINHA_TXT[p.linha] || p.linha}</span>${p.origem && p.origem !== "manual" ? `<span class="chip">${esc(ORIGEM_TXT[p.origem] || p.origem)}</span>` : ""}<span class="time">${quandoTxt}</span></div>
         <h3>${esc(p.titulo || "Sem título")}</h3>
+        ${p.arte_pendente ? `<p class="sm" style="color:var(--mute)">Prévia simples: a arte final da OpenAI é criada quando você aprovar.</p>` : ""}
         ${(p.fonte_urls || []).length ? `<a class="link-fonte sm" href="${esc(p.fonte_urls[0])}" target="_blank" rel="noopener noreferrer" data-ext="1">${ico("i-ext")}Ver fonte · ${esc(dominio(p.fonte_urls[0]))}</a>` : ""}
         <p>${esc(p.legenda)}</p>
         ${p.erro ? `<p style="color:var(--red)">${esc(p.erro)}</p>` : ""}
@@ -271,7 +272,8 @@ async function abrirDetalhe(id) {
   $("#dFonteWrap").classList.toggle("hidden", !p.fonte && !links.length);
   $("#dFonte").innerHTML = (p.fonte ? `<div>${esc(p.fonte)}</div>` : "") +
     links.map((u) => `<a class="link-fonte" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ico("i-ext")}${esc(dominio(u))}</a>`).join("");
-  $("#dErroWrap").classList.toggle("hidden", !p.erro); $("#dErro").textContent = p.erro || "";
+  $("#dErroWrap").classList.toggle("hidden", !p.erro && !p.arte_pendente);
+  $("#dErro").textContent = p.erro || (p.arte_pendente ? "Prévia simples: a arte final da OpenAI é criada quando você aprovar (sai 1–2 min depois)." : "");
   $("#dAgendaWrap").classList.toggle("hidden", !editavel); $("#dAgenda").value = "";
   if (p.sugerido_para && editavel) {
     const d = new Date(p.sugerido_para);

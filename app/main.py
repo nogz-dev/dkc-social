@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS posts (
   publicado_em TIMESTAMPTZ
 );
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS fonte_urls JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- arte só ao aprovar (notícia): guarda os slides; a OpenAI cria a arte final quando o Nog aprova
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS slides JSONB;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS arte_pendente BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS posts_status_idx ON posts(status, criado_em DESC);
 CREATE TABLE IF NOT EXISTS midias (
   id UUID PRIMARY KEY,
@@ -396,6 +399,7 @@ async def post_json(row: asyncpg.Record, base: str) -> dict[str, Any]:
         "criado_em": _iso(row["criado_em"]),
         "decidido_em": _iso(row["decidido_em"]),
         "publicado_em": _iso(row["publicado_em"]),
+        "arte_pendente": bool(row.get("arte_pendente")),
         "midias": [
             {"url": f"/m/{m['token']}.{MIME_OK.get(m['mime'], 'bin')}", "mime": m["mime"]}
             for m in midias
@@ -688,7 +692,8 @@ async def _avisar_falha_arte(msg: str) -> None:
 
 
 async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: str,
-                            foto_opcional: bool = False, auto: bool = False) -> tuple[list[tuple[str, bytes]], list[str]]:
+                            foto_opcional: bool = False, auto: bool = False,
+                            usar_openai: bool = True) -> tuple[list[tuple[str, bytes]], list[str]]:
     if not slides:
         raise HTTPException(400, "informe ao menos um slide")
     if len(slides) > 10:
@@ -715,7 +720,7 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
         if sl.get("modelo") not in MODELOS:
             raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
     # ARTE: responsabilidade da OpenAI (decisão do Nog, 16/10/2026). Os templates só voltam com IMAGENS_OPENAI=0.
-    if not openai_img.desligado():
+    if usar_openai and not openai_img.desligado():
         marca = marca_de(handle)
         # a OpenAI é a diretora de arte: ela define conceito e composição; nós entregamos o briefing
         n = len(slides)
@@ -762,9 +767,13 @@ def _links(body: dict) -> list:
 
 async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
     perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
+    # notícia que vai para aprovação: prévia com os templates (sem custo); a OpenAI só cria a arte se o Nog aprovar
+    arte_depois = (body.get("linha") == "noticia" and not body.get("auto") and not openai_img.desligado()
+                   and os.getenv("ARTE_AO_APROVAR", "1") != "0")
     midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""),
                                              foto_opcional=bool(body.get("foto_opcional")),
-                                             auto=bool(body.get("auto")) or body.get("linha") == "resultado")
+                                             auto=bool(body.get("auto")) or body.get("linha") == "resultado",
+                                             usar_openai=not arte_depois)
     sug = body.get("sugerido_para")
     if isinstance(sug, str) and sug:
         try:
@@ -776,6 +785,9 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
                            midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"),
                            sem_auto=bool(body.get("sem_auto")) or any(openai_img.AVISO_REVISAR in a for a in avisos),
                            auto=bool(body.get("auto")))
+    if arte_depois:
+        await pool.execute("UPDATE posts SET slides=$2::jsonb, arte_pendente=true WHERE id=$1",
+                           pid, json.dumps(body.get("slides") or [], ensure_ascii=False, default=str))
     if avisos:
         await evento(pid, "avisos", "; ".join(avisos))
     return pid, avisos
@@ -1648,6 +1660,20 @@ async def voltar_fila(pid: uuid.UUID, _=Depends(exige_login)):
 
 # ---------------------------------------------------------- publicar ----
 
+async def trocar_pela_arte_final(r) -> None:
+    """Notícia aprovada: a OpenAI cria a arte final (com revisão) e ela substitui a prévia antes de publicar."""
+    slides = json.loads(r["slides"]) if isinstance(r["slides"], str) else r["slides"]
+    handle = await pool.fetchval("SELECT handle FROM perfis WHERE id=$1", r["perfil_id"])
+    midias, avisos = await renderizar_slides(slides, handle, r["fonte"] or "", foto_opcional=True, auto=True)
+    async with pool.acquire() as c, c.transaction():
+        await c.execute("DELETE FROM midias WHERE post_id=$1", r["id"])
+        for i, (mime, dados) in enumerate(midias):
+            await c.execute("INSERT INTO midias(id,post_id,ordem,mime,dados,token) VALUES($1,$2,$3,$4,$5,$6)",
+                            uuid.uuid4(), r["id"], i, mime, dados, secrets.token_urlsafe(18))
+        await c.execute("UPDATE posts SET arte_pendente=false WHERE id=$1", r["id"])
+    await evento(r["id"], "arte_final", "; ".join(avisos) or "arte da OpenAI aplicada")
+
+
 async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
     try:
         r = await pool.fetchrow(
@@ -1656,6 +1682,8 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
         )
         if not r["publora_platform_id"]:
             raise publora.PubloraErro("o post não tem perfil do Instagram vinculado (sincronize os perfis)")
+        if r.get("arte_pendente") and r.get("slides"):
+            await trocar_pela_arte_final(r)
         if not base.startswith("https://"):
             raise publora.PubloraErro("endereço público do servidor não configurado (PUBLIC_BASE_URL)")
         midias = await pool.fetch("SELECT token,mime FROM midias WHERE post_id=$1 ORDER BY ordem", pid)

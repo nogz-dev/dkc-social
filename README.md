@@ -159,3 +159,10 @@ objetivos: texto/número/escudo errado, logo de terceiros, corte na borda, eleme
 
 Pedido do Nog para economizar: não sai mais post por jogo; só o carrossel "Resultados do dia" quando acaba o último
 jogo. Para voltar o post de cada jogo: `RESULTADO_POR_JOGO=1` no Railway.
+
+## Arte só ao aprovar (notícias, desde 17/10/2026)
+
+Notícia que vai para aprovação chega na fila com prévia dos templates (sem custo). A OpenAI só cria a arte final quando
+o Nog aprova: a arte é gerada (com revisão) antes de mandar para o Publora e substitui a prévia. Se falhar, o post fica
+com erro e pode ser aprovado de novo. Notícia que sai sozinha (nota 8+ de clube grande) já nasce com a arte da OpenAI.
+`ARTE_AO_APROVAR=0` volta ao jeito antigo.
