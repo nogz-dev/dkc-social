@@ -388,10 +388,10 @@ async function renderAjustes() {
     <div class="box"><h3>Perfis do Instagram</h3><p>Puxa as contas conectadas no Publora.</p>
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
-    <div class="box"><h3>Publicação automática</h3><p>Saem <b>sem aprovação</b>: a <b>Rodada do dia</b> (9h), os <b>resultados</b> (cada jogo e o resumo do dia) e a <b>tabela</b> no fim de cada rodada (Brasileirão, Champions, LaLiga, Premier). Se a revisão achar erro na arte, o post para na fila. Notícias sempre passam pela fila.</p>
+    <div class="box"><h3>Publicação automática</h3><p>Saem <b>sem aprovação</b>: a <b>Rodada do dia</b> (9h), os <b>Resultados do dia</b> (um resumo geral quando acaba o último jogo) e a <b>tabela</b> no fim de cada rodada (Brasileirão, Champions, LaLiga, Premier). Se a revisão achar erro na arte, o post para na fila. Notícias sempre passam pela fila.</p>
       <div class="linha"><span>Resultados automáticos</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
-    <div class="box"><h3>Robô de resultados</h3><p>Jogo dos principais acabou, o card de resultado sai sozinho no Instagram (é o único que não passa pela fila).</p>
+    <div class="box"><h3>Robô de resultados</h3><p>Quando acaba o último jogo do dia, sai sozinho um carrossel com todos os resultados, por campeonato. Também cuida da tabela no fim de cada rodada.</p>
       <div id="ajRes"><p>Verificando…</p></div>
       <button class="btn ghost" data-act="res-ligar" id="bRes">…</button></div>
     <div class="box"><h3>Robô de notícias</h3><p>Varre os portais, dá nota para cada notícia e escreve as mais fortes. Tudo cai na fila para você aprovar.</p>

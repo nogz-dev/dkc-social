@@ -1114,7 +1114,10 @@ async def job_resultados() -> None:
     await asyncio.sleep(45)
     while True:
         try:
-            if robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0":
+            # pedido do Nog (17/10/2026): sem post por jogo; só o resumo geral "Resultados do dia"
+            # (job_tabelas_resumo). Para voltar o post por jogo: RESULTADO_POR_JOGO=1 no Railway.
+            if (robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0"
+                    and os.getenv("RESULTADO_POR_JOGO", "0") == "1"):
                 r = await ciclo_resultados()
                 if r.get("postados"):
                     log.info("[RESULTADOS] %s", r)

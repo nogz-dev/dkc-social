@@ -154,3 +154,8 @@ objetivos: texto/número/escudo errado, logo de terceiros, corte na borda, eleme
   resultado guardado por 7 dias.
 - Notícias mais seletivas (pedido do Nog, 17/10): nota mínima 7 e no máximo 30 por dia (nota 9+ urgente fura o teto).
 - Variáveis: `OPENAI_TENTATIVAS`, `OPENAI_RESERVA_AUTO`, `OPENAI_MAX_REFERENCIAS`, `FOTO_MAX_CANDIDATAS`, `FOTO_MODELO_VISAO`.
+
+## Resultados: só o resumo geral (desde 17/10/2026)
+
+Pedido do Nog para economizar: não sai mais post por jogo; só o carrossel "Resultados do dia" quando acaba o último
+jogo. Para voltar o post de cada jogo: `RESULTADO_POR_JOGO=1` no Railway.

@@ -1,5 +1,5 @@
 /* DKC Social — service worker: push + cache leve do app shell */
-const CACHE = "dkc-social-v5";
+const CACHE = "dkc-social-v6";
 const SHELL = ["/", "/static/app.css", "/static/app.js", "/manifest.webmanifest", "/static/icons/icon-192.png", "/static/logo-dkc.png"];
 
 self.addEventListener("install", (e) => {
