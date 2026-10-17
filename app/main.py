@@ -1782,6 +1782,35 @@ async def exige_qg(x_qg_key: str = Header(default="")) -> None:
         raise HTTPException(401, f"chave diferente — DKC Social tem {_digital(QG_KEY)}, o QG mandou {_digital(x_qg_key.strip())}")
 
 
+_QG_GUARDA_OK = set("abcdefghijklmnopqrstuvwxyz0123456789_")
+
+
+def _qg_chave_guarda(chave: str) -> str:
+    if not chave or len(chave) > 40 or not set(chave) <= _QG_GUARDA_OK:
+        raise HTTPException(400, "chave inválida")
+    return f"qg_{chave}"
+
+
+@app.get("/api/qg/guarda/{chave}")
+async def qg_guarda_ler(chave: str, _=Depends(exige_qg)):
+    """Cofre pequeno do QG do Nog (o QG não tem banco): inscrições de push e avisos já enviados."""
+    v = await cfg_get(_qg_chave_guarda(chave))
+    return {"valor": json.loads(v) if v else None}
+
+
+@app.put("/api/qg/guarda/{chave}")
+async def qg_guarda_salvar(chave: str, request: Request, _=Depends(exige_qg)):
+    corpo = await request.body()
+    if len(corpo) > 200_000:
+        raise HTTPException(413, "grande demais")
+    try:
+        valor = json.loads(corpo or b"{}").get("valor")
+    except (ValueError, AttributeError):
+        raise HTTPException(400, "JSON inválido")
+    await cfg_set(_qg_chave_guarda(chave), json.dumps(valor, ensure_ascii=False))
+    return {"ok": True}
+
+
 @app.get("/api/qg/status")
 async def qg_status(_=Depends(exige_qg)):
     """Só leitura: o QG do Nog usa para mostrar a equipe do Social trabalhando de verdade."""
