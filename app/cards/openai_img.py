@@ -43,7 +43,7 @@ MODELO_CONF = os.getenv("ARTE_MODELO_CONFERENCIA", "claude-sonnet-5-5")
 RAIZ = Path(__file__).resolve().parents[2]
 MANUAIS = {"seutipster.app": "seu-tipster"}   # @ do perfil → pasta do manual
 AVISO_REVISAR = "revisar a arte"
-TENTATIVAS = int(os.getenv("OPENAI_TENTATIVAS", "3"))   # 1ª + refações quando a revisão acha erro
+TENTATIVAS = int(os.getenv("OPENAI_TENTATIVAS", "2"))   # 1ª + refações quando a revisão acha erro
 
 _sem = asyncio.Semaphore(int(os.getenv("OPENAI_PARALELO", "3")))
 _uso: dict[str, Any] = {"dia": None, "n": 0, "ultimo_erro": None}
@@ -66,7 +66,8 @@ def status() -> dict:
     return {"responsavel_pela_arte": "templates (emergência)" if desligado() else "OpenAI",
             "chave_configurada": bool(chave()), "modelo": MODELO,
             "hoje": _uso["n"] if _uso["dia"] == date.today() else 0, "limite_dia": LIMITE_DIA,
-            "ultimo_erro": _uso["ultimo_erro"]}
+            "reserva_robos": f"{int(RESERVA_AUTO * 100)}%", "ultimo_erro": _uso["ultimo_erro"],
+            "pausada": _uso.get("pausa_motivo") if _uso.get("pausa_ate", 0) > __import__("time").time() else None}
 
 
 async def testar_chave() -> dict:
@@ -316,9 +317,9 @@ async def referencias(d: dict, modelo: str = "") -> tuple[list[tuple[bytes, str]
         if r.get("escudo"):
             pedidos.append((r["escudo"], f"escudo do {_limpo(r.get('time'))}"))
     imgs, nomes = [], []
-    for url, nome in pedidos[:16]:
+    for url, nome in pedidos[:int(os.getenv("OPENAI_MAX_REFERENCIAS", "10"))]:
         try:
-            dados, _ = await fotos.baixar(url, 1536 if nome.startswith("foto do jogador") else 512)
+            dados, _ = await fotos.baixar(url, 1024 if nome.startswith("foto do jogador") else 256)
             im = Image.open(io.BytesIO(dados))
             buf = io.BytesIO()
             im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB").save(buf, "PNG")
@@ -331,38 +332,68 @@ async def referencias(d: dict, modelo: str = "") -> tuple[list[tuple[bytes, str]
 
 
 # ---------------------------------------------------------------- OpenAI --
-async def _chamar(prompt: str, refs: list[tuple[bytes, str]]) -> bytes:
-    hoje = date.today()
-    if _uso["dia"] != hoje:
-        _uso.update(dia=hoje, n=0)
-    if LIMITE_DIA and _uso["n"] >= LIMITE_DIA:
-        raise ArteErro(f"limite diário de {LIMITE_DIA} imagens da OpenAI atingido (OPENAI_IMAGENS_DIA)")
+RESERVA_AUTO = float(os.getenv("OPENAI_RESERVA_AUTO", "0.3"))  # 30% do limite do dia guardado para rodada/resultado/tabela
+
+
+def _hoje() -> None:
+    if _uso["dia"] != date.today():
+        _uso.update(dia=date.today(), n=0)
+
+
+async def _chamar(prompt: str, refs: list[tuple[bytes, str]], auto: bool = False) -> bytes:
+    import time
+    _hoje()
     if not chave():
         raise ArteErro("OPENAI_API_KEY não configurada no Railway")
-    _uso["n"] += 1
+    if _uso.get("pausa_ate", 0) > time.time():
+        raise ArteErro(f"OpenAI pausada: {_uso.get('pausa_motivo')}")
+    if LIMITE_DIA and _uso["n"] >= LIMITE_DIA:
+        raise ArteErro(f"limite diário de {LIMITE_DIA} imagens atingido (trava do DKC Social, variável OPENAI_IMAGENS_DIA)")
+    if LIMITE_DIA and not auto and _uso["n"] >= LIMITE_DIA * (1 - RESERVA_AUTO):
+        raise ArteErro(f"notícias pausadas hoje: {int(RESERVA_AUTO * 100)}% do limite diário fica para rodada/resultados/tabela")
     cab = {"Authorization": f"Bearer {chave()}"}
     params = {"model": MODELO, "prompt": prompt, "size": TAMANHO, "quality": QUALIDADE,
               "output_format": "jpeg", "output_compression": "95", "n": "1"}
-    try:
-        async with _sem:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20)) as c:
-                if refs:
-                    campo = "image[]" if len(refs) > 1 else "image"
-                    r = await c.post(f"{BASE}/images/edits", headers=cab, data=params,
-                                     files=[(campo, (f"ref{i}.png", b, m)) for i, (b, m) in enumerate(refs, 1)])
-                else:
-                    r = await c.post(f"{BASE}/images/generations", headers=cab, json=params)
-    except httpx.HTTPError as e:
-        raise ArteErro(f"sem resposta da OpenAI ({type(e).__name__})")
-    if r.status_code >= 400:
+    for tentativa in range(4):
+        try:
+            async with _sem:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20)) as c:
+                    if refs:
+                        campo = "image[]" if len(refs) > 1 else "image"
+                        r = await c.post(f"{BASE}/images/edits", headers=cab, data=params,
+                                         files=[(campo, (f"ref{i}.png", b, m)) for i, (b, m) in enumerate(refs, 1)])
+                    else:
+                        r = await c.post(f"{BASE}/images/generations", headers=cab, json=params)
+        except httpx.HTTPError as e:
+            raise ArteErro(f"sem resposta da OpenAI ({type(e).__name__})")
+        if r.status_code < 400:
+            break
         try:
             err = r.json().get("error") or {}
         except Exception:
             err = {}
-        raise ArteErro(f"OpenAI {r.status_code}: {err.get('code') or ''} {(err.get('message') or r.text)[:200]}".strip())
+        code, msg = str(err.get("code") or err.get("type") or ""), str(err.get("message") or r.text)[:200]
+        txt = f"{code} {msg}".lower()
+        if "quota" in txt or "billing" in txt or "spend" in txt or "budget" in txt:
+            # conta sem crédito / limite de gasto da OpenAI: para de tentar por 30 min (não adianta insistir)
+            _uso["pausa_ate"] = time.time() + 1800
+            _uso["pausa_motivo"] = ("a conta da OpenAI ficou sem crédito ou bateu o limite de gasto "
+                                    "(platform.openai.com → Settings → Billing / Limits)")
+            raise ArteErro(f"OpenAI {r.status_code}: {code} — {_uso['pausa_motivo']}")
+        if r.status_code == 429 and tentativa < 3:
+            # limite de velocidade (imagens por minuto): espera e tenta de novo
+            try:
+                espera = float(r.headers.get("retry-after") or 0)
+            except ValueError:
+                espera = 0
+            await asyncio.sleep(min(max(espera, 15 * (tentativa + 1)), 90))
+            continue
+        raise ArteErro(f"OpenAI {r.status_code}: {code} {msg}".strip())
     b64 = ((r.json().get("data") or [{}])[0]).get("b64_json")
     if not b64:
         raise ArteErro("OpenAI não devolveu imagem")
+    _hoje()
+    _uso["n"] += 1  # só conta imagem entregue (erro não é cobrado)
     return base64.b64decode(b64)
 
 
@@ -407,9 +438,30 @@ async def revisar(img: bytes, d: dict) -> dict:
 
 
 # ---------------------------------------------------------------- principal --
+_prontas: dict[str, tuple[float, bytes, list[str]]] = {}
+
+
 async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None = None,
-                     pagina: tuple[int, int] = (1, 1), capa_img: bytes | None = None) -> tuple[bytes, list[str]]:
-    """Devolve (jpeg 1080x1350 sem o rodapé, avisos). Levanta ArteErro se a OpenAI não devolver imagem."""
+                     pagina: tuple[int, int] = (1, 1), capa_img: bytes | None = None,
+                     auto: bool = False) -> tuple[bytes, list[str]]:
+    """Devolve (jpeg 1080x1350 sem o rodapé, avisos). Levanta ArteErro se a OpenAI não devolver imagem.
+    auto=True (rodada/resultado/tabela): até TENTATIVAS e usa a reserva do limite. Notícia (vai para aprovação): 1 tentativa."""
+    import hashlib
+    import time
+    chave_cache = hashlib.sha1(json.dumps([modelo, d, pagina, marca.get("handle")], sort_keys=True, default=str)
+                               .encode()).hexdigest()
+    pronta = _prontas.get(chave_cache)
+    if pronta and time.time() - pronta[0] < 21600:
+        return pronta[1], list(pronta[2])
+    jpg, avisos = await _criar_arte(modelo, d, marca, capa, pagina, capa_img, auto)
+    _prontas[chave_cache] = (time.time(), jpg, avisos)
+    for k in [k for k, v in _prontas.items() if time.time() - v[0] > 21600]:
+        _prontas.pop(k, None)
+    return jpg, avisos
+
+
+async def _criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None, pagina: tuple[int, int],
+                      capa_img: bytes | None, auto: bool) -> tuple[bytes, list[str]]:
     refs, nomes = await referencias(d, modelo)
     if capa_img and len(refs) < 16:  # páginas internas do carrossel enxergam a capa pronta (continuidade visual)
         buf = io.BytesIO()
@@ -421,9 +473,9 @@ async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None =
     correcoes: list[str] | None = None
     img = None
     try:
-        for tentativa in range(TENTATIVAS):
+        for tentativa in range(TENTATIVAS if auto else 1):
             try:
-                img = await _chamar(briefing(modelo, d, marca, nomes, correcoes, capa, pagina), refs)
+                img = await _chamar(briefing(modelo, d, marca, nomes, correcoes, capa, pagina), refs, auto)
             except ArteErro as e:
                 msg = str(e).lower()
                 if refs and nomes and nomes[0].startswith(("foto do jogador", "retrato")) and ("moderation" in msg or "safety" in msg):
@@ -433,7 +485,7 @@ async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None =
                 if img is not None:   # a 1ª saiu; a refação falhou: fica a 1ª, para revisar
                     break
                 raise
-            v = await revisar(img, d)
+            v = await revisar(img, d) if auto else {"ok": True, "erros": []}
             log.info("[ARTE] %s tentativa %d · %s", modelo, tentativa + 1, v)
             if v["ok"]:
                 if tentativa:

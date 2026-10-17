@@ -225,7 +225,9 @@ async def claude(modelo: str, sistema: str, usuario: str, max_tokens: int = 2000
         r = await c.post(
             os.getenv("ANTHROPIC_BASE", "https://api.anthropic.com") + "/v1/messages",
             headers={"x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={"model": modelo, "max_tokens": max_tokens, "system": sistema,
+            # instruções fixas em cache por 1h: a triagem roda a cada 10 min com o mesmo texto (leitura sai ~90% mais barata)
+            json={"model": modelo, "max_tokens": max_tokens,
+                  "system": [{"type": "text", "text": sistema, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
                   "messages": [{"role": "user", "content": usuario}]},
         )
     if r.status_code >= 400:

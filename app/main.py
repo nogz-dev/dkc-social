@@ -656,7 +656,7 @@ async def _avisar_falha_arte(msg: str) -> None:
 
 
 async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: str,
-                            foto_opcional: bool = False) -> tuple[list[tuple[str, bytes]], list[str]]:
+                            foto_opcional: bool = False, auto: bool = False) -> tuple[list[tuple[str, bytes]], list[str]]:
     if not slides:
         raise HTTPException(400, "informe ao menos um slide")
     if len(slides) > 10:
@@ -690,10 +690,10 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
         capa = openai_img.textos(slides[0].get("dados") or {}) if n > 1 else None
         # carrossel: a capa sai primeiro e vai como referência para as outras páginas (continuidade visual)
         primeira = await asyncio.gather(openai_img.criar_arte(slides[0]["modelo"], slides[0].get("dados") or {}, marca,
-                                                              None, (1, n)), return_exceptions=True)
+                                                              None, (1, n), None, auto), return_exceptions=True)
         capa_img = primeira[0][0] if not isinstance(primeira[0], BaseException) else None
         artes = primeira + list(await asyncio.gather(
-            *(openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca, capa, (i, n), capa_img)
+            *(openai_img.criar_arte(sl["modelo"], sl.get("dados") or {}, marca, capa, (i, n), capa_img, auto)
               for i, sl in enumerate(slides[1:], 2)),
             return_exceptions=True))
         falhas = [(i, a) for i, a in enumerate(artes, 1) if isinstance(a, BaseException)]
@@ -731,7 +731,8 @@ def _links(body: dict) -> list:
 async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list[str]]:
     perfil_id, handle = await _perfil(body.get("perfil_id"), body.get("perfil_handle") or body.get("perfil"))
     midias, avisos = await renderizar_slides(body.get("slides") or [], handle, body.get("fonte", ""),
-                                             foto_opcional=bool(body.get("foto_opcional")))
+                                             foto_opcional=bool(body.get("foto_opcional")),
+                                             auto=bool(body.get("auto")) or body.get("linha") == "resultado")
     sug = body.get("sugerido_para")
     if isinstance(sug, str) and sug:
         try:

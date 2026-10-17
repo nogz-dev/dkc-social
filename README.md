@@ -143,3 +143,13 @@ objetivos: texto/número/escudo errado, logo de terceiros, corte na borda, eleme
 - Jogador entra em: notícias (protagonista), resultado (herói do jogo), **capa da Rodada e pré-jogos** (artilheiro de um
   dos times), **capa da tabela** (artilheiro do líder) e **capa dos Resultados do dia** (herói do jogo mais importante).
 - `/api/saude` → `fotos_jogadores`: buscas, quantas acharam foto/retrato/nada e as últimas.
+
+## Economia de OpenAI e Claude (desde 17/10/2026)
+
+- OpenAI: conta só imagem entregue; 30% do limite diário reservado para rodada/resultado/tabela (notícia para antes);
+  sem crédito/limite de gasto na conta → pausa 30 min com aviso; limite de velocidade (429) → espera e tenta de novo;
+  slide pronto fica em cache 6h (refazer o post não gera de novo); notícia = 1 tentativa e sem revisão automática
+  (o Nog vê na fila); automáticos = até 2 tentativas; referências menores (escudo 256 px, jogador 1024 px, até 10).
+- Claude: instruções fixas da triagem/redação em cache de 1h; conferência de foto com Haiku, até 5 candidatas,
+  resultado guardado por 7 dias.
+- Variáveis: `OPENAI_TENTATIVAS`, `OPENAI_RESERVA_AUTO`, `OPENAI_MAX_REFERENCIAS`, `FOTO_MAX_CANDIDATAS`, `FOTO_MODELO_VISAO`.

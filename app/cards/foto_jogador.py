@@ -36,7 +36,7 @@ log = logging.getLogger("dkc.foto")
 
 API_FOOTBALL = os.getenv("API_FOOTBALL_BASE", "https://v3.football.api-sports.io")
 MEDIA = os.getenv("API_FOOTBALL_MEDIA", "https://media.api-sports.io")
-MODELO_VISAO = os.getenv("FOTO_MODELO_VISAO", "claude-sonnet-5-5")
+MODELO_VISAO = os.getenv("FOTO_MODELO_VISAO", "claude-haiku-5-5")
 UA_WIKI = "DKCSocial/1.0 (contato@dkc.social)"
 
 
@@ -248,7 +248,7 @@ async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id
     import time
     chave = f"{_sem_acento(nome or '')}|{jogador_id or ''}|{_sem_acento(clube or '')}"
     hit = _cache.get(chave)
-    if hit and time.time() - hit[0] < 86400:
+    if hit and time.time() - hit[0] < 7 * 86400:
         return hit[1]
     STATS["buscas"] += 1
     res = await _foto_verificada(nome, clube, jogador_id)
@@ -280,7 +280,7 @@ async def _foto_verificada(nome: str | None, clube: str | None, jogador_id: int 
                 vistos.add(cnd["url"])
                 cands.append(cnd)
     reserva = None  # foto aprovada, mas com camisa de outro clube: só se não houver melhor
-    for cnd in cands[:10]:
+    for cnd in cands[:int(os.getenv("FOTO_MAX_CANDIDATAS", "5"))]:
         try:
             dados, _ = await fotos.baixar(cnd["url"], 1600)
         except Exception:
