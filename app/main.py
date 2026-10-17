@@ -699,7 +699,17 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
     if len(slides) > 10:
         raise HTTPException(400, "máximo de 10 slides")
     midias, avisos = [], []
-    for sl in slides:  # "jogador" no slide = buscar foto conferida (API-Football + busca + checagem por IA)
+    avisos += await preparar_fotos(slides)
+    for i, sl in enumerate(slides, 1):
+        if sl.get("modelo") not in MODELOS:
+            raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
+    return await _renderizar(slides, handle, fonte, foto_opcional, auto, usar_openai, midias, avisos)
+
+
+async def preparar_fotos(slides: list[dict]) -> list[str]:
+    """Slide com "jogador" = busca a foto (conferida ou retrato oficial). Altera os dados do slide."""
+    avisos: list[str] = []
+    for sl in slides:
         dd = sl.get("dados") or {}
         jg = dd.get("jogador")
         if jg and dd.get("foto_tipo") not in ("jogador", "retrato"):
@@ -716,9 +726,10 @@ async def renderizar_slides(slides: list[dict], handle: Optional[str], fonte: st
             else:
                 avisos.append(f"sem foto conferida de {jg.get('nome')}")
             sl["dados"] = dd
-    for i, sl in enumerate(slides, 1):
-        if sl.get("modelo") not in MODELOS:
-            raise HTTPException(400, f"slide {i}: modelo inválido ({', '.join(MODELOS)})")
+    return avisos
+
+
+async def _renderizar(slides, handle, fonte, foto_opcional, auto, usar_openai, midias, avisos):
     # ARTE: responsabilidade da OpenAI (decisão do Nog, 16/10/2026). Os templates só voltam com IMAGENS_OPENAI=0.
     if usar_openai and not openai_img.desligado():
         marca = marca_de(handle)
@@ -919,7 +930,8 @@ async def pauta_status(_=Depends(exige_login)):
 
 # ------------------------------------------------------- robô: rodada ----
 
-RODADA_HORA = int(os.getenv("RODADA_HORA", "7"))  # monta às 7h (sugestão de publicação 9h)
+RODADA_HORA = int(os.getenv("RODADA_HORA", "6"))  # plano B: se o lote da noite não deu, monta na hora às 6h
+RODADA_PREPARO_HORA = int(os.getenv("RODADA_PREPARO_HORA", "20"))  # monta a rodada de AMANHÃ às 20h, em lote (50% mais barato)
 
 
 async def gerar_rodada(dia=None, forcar: bool = False) -> dict[str, Any]:
@@ -941,15 +953,102 @@ async def gerar_rodada(dia=None, forcar: bool = False) -> dict[str, Any]:
     return {"ok": True, "jogos": len(jogos), "slides": len(pedido["slides"]), "id": str(pid), "avisos": avisos}
 
 
+async def preparar_rodada_lote(dia) -> None:
+    """20h: monta a Rodada de amanhã e manda as artes para a OpenAI em lote (metade do preço, até 24h)."""
+    chave = f"rodada_lote_{dia.isoformat()}"
+    if await cfg_get(chave) or await cfg_get(f"rodada_{dia.isoformat()}"):
+        return
+    jogos = await robo_rodada.jogos_do_dia(dia)
+    handle = await pool.fetchval("SELECT handle FROM perfis WHERE ativo ORDER BY id LIMIT 1") or "seutipster.app"
+    pedido = robo_rodada.montar(jogos, dia, handle)
+    if not pedido:
+        await cfg_set(f"rodada_{dia.isoformat()}", "sem_jogos")
+        return
+    pedido["auto"] = True
+    await jogadores_em_destaque(pedido["slides"])
+    await preparar_fotos(pedido["slides"])
+    if openai_img.desligado():
+        await cfg_set(chave, json.dumps({"estado": "sem_openai"}))
+        return
+    marca = marca_de(handle)
+    n = len(pedido["slides"])
+    capa = openai_img.textos(pedido["slides"][0].get("dados") or {}) if n > 1 else None
+    try:
+        itens = [(f"s{i}", await openai_img.preparar_pedido(sl["modelo"], sl.get("dados") or {}, marca,
+                                                          capa if i > 1 else None, (i, n)))
+                 for i, sl in enumerate(pedido["slides"], 1)]
+        lotes = await openai_img.lote_enviar(itens)
+    except Exception as e:
+        # o lote não saiu: monta agora mesmo do jeito normal (preço cheio), já agendada para a manhã
+        log.warning("[RODADA] lote falhou (%s): montando na hora", e)
+        await cfg_set(chave, json.dumps({"estado": "falhou", "erro": str(e)[:300]}))
+        await gerar_rodada(dia)
+        return
+    await cfg_set(chave, json.dumps({"estado": "enviado", "lotes": lotes, "pedido": pedido,
+                                     "em": _iso(datetime.now(timezone.utc))}, ensure_ascii=False, default=str))
+    log.info("[RODADA] lote de %s enviado: %s", dia, lotes)
+
+
+async def conferir_rodada_lote(dia) -> None:
+    """Lote pronto: revisa, guarda as artes e cria o post (agendado para 9h, ou 1h antes do 1º jogo)."""
+    chave = f"rodada_lote_{dia.isoformat()}"
+    bruto = await cfg_get(chave)
+    if not bruto:
+        return
+    st = json.loads(bruto)
+    if st.get("estado") != "enviado":
+        return
+    imgs: dict[str, bytes] = {}
+    pendente = False
+    for lid in st["lotes"]:
+        b = await openai_img.lote_status(lid)
+        if b.get("status") == "completed" and b.get("output_file_id"):
+            imgs.update(await openai_img.lote_resultados(b["output_file_id"]))
+        elif b.get("status") in ("failed", "expired", "cancelled", "cancelling"):
+            continue  # o que faltar é gerado na hora, no preço normal
+        else:
+            pendente = True
+    agora = datetime.now(robo_rodada.TZ)
+    if pendente:
+        if agora.date() >= dia and agora.hour >= 5:  # passou da hora: cancela e faz na hora
+            for lid in st["lotes"]:
+                await openai_img.lote_cancelar(lid)
+            await cfg_set(chave, json.dumps({**st, "estado": "atrasado"}, ensure_ascii=False, default=str))
+            await gerar_rodada(dia)
+        return
+    pedido = st["pedido"]
+    marca = marca_de(pedido.get("perfil_handle"))
+    n = len(pedido["slides"])
+    for i, sl in enumerate(pedido["slides"], 1):
+        jpg = imgs.get(f"s{i}")
+        if not jpg:
+            continue
+        v = await openai_img.revisar(jpg, sl.get("dados") or {})
+        if v.get("ok"):
+            openai_img.guardar_pronta(sl["modelo"], sl.get("dados") or {}, (i, n), marca, jpg, [])
+    await cfg_set(chave, json.dumps({"estado": "pronto", "lotes": st["lotes"]}))
+    pid, _av = await criar_post_de_slides(pedido, "robo")  # usa as artes do lote; o que faltar sai na hora
+    await cfg_set(f"rodada_{dia.isoformat()}", str(pid))
+    log.info("[RODADA] lote de %s virou post %s (%d de %d artes do lote)", dia, pid, len(imgs), n)
+
+
 async def job_rodada() -> None:
     await asyncio.sleep(30)
     while True:
         try:
             agora = datetime.now(robo_rodada.TZ)
-            if agora.hour >= RODADA_HORA and robo_rodada.chave():
-                r = await gerar_rodada(agora.date())
-                if r.get("ok"):
-                    log.info("[RODADA] %s", r)
+            hoje, amanha = agora.date(), agora.date() + timedelta(days=1)
+            if robo_rodada.chave():
+                if agora.hour >= RODADA_PREPARO_HORA:
+                    await preparar_rodada_lote(amanha)
+                for d in (hoje, amanha):
+                    await conferir_rodada_lote(d)
+                # plano B: amanheceu sem rodada e sem lote em andamento → monta na hora
+                lote = json.loads(await cfg_get(f"rodada_lote_{hoje.isoformat()}") or "{}")
+                if agora.hour >= RODADA_HORA and lote.get("estado") != "enviado":
+                    r = await gerar_rodada(hoje)
+                    if r.get("ok"):
+                        log.info("[RODADA] %s", r)
         except Exception as e:
             log.warning("[RODADA] %s", e)
             await enviar_push({"title": "⚠️ Rodada do dia falhou", "body": str(e)[:120], "url": "/"})

@@ -178,7 +178,11 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "Quer palpite pra esses jogos? Tem análise de todos no app SeuTipster, link na bio.\n\n"
         "#futebol #rodadadodia #palpites #SeuTipster"
     )
-    sug = datetime(dia.year, dia.month, dia.day, 9, 0, tzinfo=TZ)
+    # sai às 9h, ou 1h antes do primeiro jogo se ele for cedo (nunca antes das 7h, início da janela de publicação)
+    from datetime import timedelta
+    primeiro_dt = min(datetime.fromisoformat(j["fixture"]["date"].replace("Z", "+00:00")).astimezone(TZ) for j in jogos)
+    sug = max(datetime(dia.year, dia.month, dia.day, 7, 0, tzinfo=TZ),
+              min(datetime(dia.year, dia.month, dia.day, 9, 0, tzinfo=TZ), primeiro_dt - timedelta(hours=1)))
     return {
         "perfil_handle": handle, "linha": "rodada", "origem": "robo",
         "titulo": f"Rodada do dia · {data_curta} · {total} jogos",

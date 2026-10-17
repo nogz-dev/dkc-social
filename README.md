@@ -171,3 +171,14 @@ com erro e pode ser aprovado de novo. Notícia que sai sozinha (nota 8+ de clube
 
 Capa + 1 página por campeonato (até 10 jogos, em ordem de horário), sem card individual de pré-jogo; no máximo 4
 campeonatos = 5 páginas (`RODADA_MAX_LIGAS`). A legenda continua citando todos os campeonatos do dia.
+
+## Rodada em lote + pedido enxuto + revisão só por erro real (desde 17/10/2026)
+
+- Modelo de imagem: `gpt-image-2.5-sunburst` (mais novo, mesmo preço por token; o único que aceita lote).
+  Voltar: `OPENAI_IMAGE_MODEL=gpt-image-2`.
+- Rodada do dia: às 20h (`RODADA_PREPARO_HORA`) a de AMANHÃ vai para a OpenAI em lote (50% mais barato, até 24h).
+  Pronto o lote: revisão, post criado e agendado para 9h ou 1h antes do 1º jogo (nunca antes das 7h). Plano B: lote
+  falhou → monta na hora (preço cheio); lote não ficou pronto até 5h → cancela e monta na hora; amanheceu sem rodada → 6h.
+- Pedido para a OpenAI ~30% menor: diretor de arte 1–9 inteiro e 10–13 resumido; do manual só cores/personalidade,
+  "o que evitar" e o tipo do post; regras sem repetição.
+- Revisão automática só pede refação por erro real (dados, marca de terceiros, corte, texto sobre texto, rosto deformado).

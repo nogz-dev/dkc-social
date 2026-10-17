@@ -36,7 +36,7 @@ from .. import uso_ia
 log = logging.getLogger("dkc.openai")
 
 BASE = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
-MODELO = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2")
+MODELO = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2.5-sunburst")  # mais novo; o único com geração em lote
 TAMANHO = os.getenv("OPENAI_IMAGE_SIZE", "1088x1360")      # 4:5, múltiplos de 16
 QUALIDADE = os.getenv("OPENAI_IMAGE_QUALITY", "high")
 LIMITE_DIA = int(os.getenv("OPENAI_IMAGENS_DIA", "400"))     # trava de segurança de custo
@@ -119,15 +119,16 @@ def manual(handle: str | None, modelo: str, pre_jogo: bool = False, resultados_d
     if modelo == "rodada" and resultados_do_dia:
         alvo = "D. RESULTADOS"
     m = re.search(r"^### " + re.escape(alvo) + r".*?(?=^### |\Z)", pega("5. TIPOS"), flags=re.M | re.S | re.I)
-    partes = [pega("CORES OFICIAIS"), pega("1. IDENTIDADE"), pega("2. DIREÇÃO DE ARTE"), m.group(0) if m else ""]
-    return "\n\n".join(p for p in partes if p)
+    ident = pega("1. IDENTIDADE").split("### Paleta")[0].split("### Logotipo")[0].strip()  # HEX já vem nas cores oficiais  # logotipo é aplicado por nós depois
+    da = pega("2. DIREÇÃO DE ARTE")
+    evitar = da[da.find("### O que evitar"):].strip() if "### O que evitar" in da else ""
+    partes = [pega("CORES OFICIAIS"), ident, evitar, m.group(0) if m else ""]
+    return "\n\n".join(p.replace("---", "").strip() for p in partes if p)
 
 
 # --------------------------------------------------------------- briefing --
 REGRAS = """Regras fixas desta arte:
-- Card vertical de Instagram 4:5, campanha esportiva premium, cinematográfica, com identidade própria (não imite nenhum canal ou emissora). Acabamento de designer humano, nada com cara de IA genérica (sem brilho plástico, pele de cera, objetos derretidos ou deformados).
-- Tipografia moderna e impactante, sans serif condensada pesada, hierarquia clara, textos grandes e legíveis.
-- Cores: base {bg}, destaque da marca {cor} e as cores do clube protagonista quando houver.
+- Card vertical de Instagram 4:5. Cores: base {bg}, destaque da marca {cor} e as cores do clube protagonista quando houver.
 - PROIBIDO: logo, marca d'água ou nome de emissora, portal ou outro perfil; logo de casa de aposta; selo promocional; QR code; @ de perfis; texto que não esteja na lista; número inventado.
 - Escreva SOMENTE os textos da lista, exatamente como estão (acentos, nomes e números idênticos).
 
@@ -158,7 +159,19 @@ def diretor() -> str:
     if not arq.exists():
         return ""
     txt = re.sub(r"<!--.*?-->", "", arq.read_text(encoding="utf-8"), flags=re.S)
-    return txt.split("## BRIEFING DE CADA PEÇA")[0].strip()
+    txt = txt.split("## BRIEFING DE CADA PEÇA")[0].strip()
+    # pedido mais enxuto (economia): 10–13 já estão no briefing da peça e nas restrições; vira um resumo fiel
+    corte = re.search(r"^## 10\.", txt, flags=re.M)
+    if corte:
+        txt = txt[:corte.start()].rstrip() + (
+            "\n\n## 10–13. TEXTO, FORMATO, ACABAMENTO E REVISÃO\n"
+            "Use só os dados e textos do briefing, revisados (nomes, acentos, números); sem selos, chamadas ou frases extras. "
+            "Refaça a composição para a proporção pedida; em carrossel, capa com promessa clara e continuidade visual entre as "
+            "páginas. Não entregue letras deformadas, logotipo alterado ou informação ilegível. Antes de entregar, confira: "
+            "mensagem principal primeiro, conceito ligado ao conteúdo, protagonista claro, textos legíveis no celular, margens "
+            "e alinhamentos intencionais, nada competindo sem necessidade, imagens integradas, identidade respeitada e "
+            "personalidade própria. Cada elemento tem uma função: se remover melhora a clareza, remova.")
+    return txt
 
 
 def textos(d: dict) -> list[str]:
@@ -268,8 +281,8 @@ def briefing(modelo: str, d: dict, marca: dict, refs: list[str], correcoes: list
     partes.append("BRIEFING DESTA PEÇA:\n" + "\n".join(briefing_peca))
     if correcoes:
         partes.append("A versão anterior foi reprovada na revisão. Corrija todos os pontos:\n- " + "\n- ".join(correcoes))
-    partes.append("Você é o diretor de arte desta peça: defina o conceito (item 2), a composição e a tipografia, revise (item 13) "
-                  "e entregue a arte final. Critério final: cada elemento tem uma função; se remover melhora a clareza, remova.")
+    partes.append("Você é o diretor de arte desta peça: defina o conceito (item 2), a composição e a tipografia, revise e "
+                  "entregue a arte final.")
     return "\n\n".join(partes)
 
 
@@ -407,11 +420,11 @@ Textos que DEVEM aparecer, corretos (acentos, grafia e números idênticos; caix
 
 Responda SOMENTE com JSON:
 {{"ok": true|false, "erros": ["cada problema em até 14 palavras, dizendo onde está e como corrigir"]}}
-ok=false só se houver:
-DADOS: texto obrigatório faltando ou errado; número, placar ou nome diferente do pedido; texto legível inventado.
-MARCA: logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo deformado ou trocado; logotipo da marca desenhado.
-DEFEITOS: texto ou escudo cortado na borda ou fora da margem; algo escrito nos 190 px de baixo; elementos tortos/inclinados;
-texto sobre outro texto, escudo ou rosto; texto ilegível no celular; letras deformadas; rosto ou corpo deformado."""
+ok=false SÓ por erro real (refazer custa uma imagem nova; detalhe de estilo ou layout NÃO é motivo):
+DADOS: texto obrigatório faltando ou com grafia/número errado; placar, nome ou número diferente do pedido; texto legível inventado.
+MARCA: logo ou nome de emissora, portal, casa de aposta ou outro perfil; escudo trocado ou deformado; logotipo da marca desenhado.
+QUEBRA: texto ou escudo cortado pela borda; algo escrito nos 190 px de baixo; texto em cima de outro texto (ilegível);
+rosto deformado."""
 
 
 async def revisar(img: bytes, d: dict) -> dict:
@@ -444,15 +457,99 @@ async def revisar(img: bytes, d: dict) -> dict:
 _prontas: dict[str, tuple[float, bytes, list[str]]] = {}
 
 
+def _chave(modelo: str, d: dict, pagina: tuple[int, int], marca: dict) -> str:
+    import hashlib
+    return hashlib.sha1(json.dumps([modelo, d, list(pagina), marca.get("handle")], sort_keys=True, default=str)
+                        .encode()).hexdigest()
+
+
+def guardar_pronta(modelo: str, d: dict, pagina: tuple[int, int], marca: dict, jpg: bytes, avisos: list[str]) -> None:
+    """Arte já feita (ex.: veio do lote da noite): o próximo criar_arte desse slide usa ela sem gerar de novo."""
+    import time
+    _prontas[_chave(modelo, d, pagina, marca)] = (time.time(), _ajustar(jpg), list(avisos))
+
+
+# ------------------------------------------------- geração em lote (50% mais barato, até 24h) --
+async def preparar_pedido(modelo: str, d: dict, marca: dict, capa: list[str] | None,
+                          pagina: tuple[int, int]) -> dict:
+    """Mesmo pedido que criar_arte faria (briefing + referências), para mandar no lote."""
+    refs, nomes = await referencias(d, modelo)
+    return {"prompt": briefing(modelo, d, marca, nomes, None, capa, pagina), "refs": refs}
+
+
+def _corpo(prompt: str, refs: list[tuple[bytes, str]]) -> dict:
+    corpo = {"model": MODELO, "prompt": prompt, "size": TAMANHO, "quality": QUALIDADE,
+             "output_format": "jpeg", "output_compression": 95, "n": 1}
+    if refs:
+        corpo["images"] = [{"image_url": f"data:{m};base64,{base64.b64encode(b).decode()}"} for b, m in refs]
+    return corpo
+
+
+async def lote_enviar(itens: list[tuple[str, dict]]) -> list[str]:
+    """itens = [(custom_id, {"prompt","refs"})]. Um lote por endpoint (com e sem imagem de referência)."""
+    if not chave():
+        raise ArteErro("OPENAI_API_KEY não configurada no Railway")
+    grupos: dict[str, list[str]] = {}
+    for cid, p in itens:
+        url = "/v1/images/edits" if p["refs"] else "/v1/images/generations"
+        grupos.setdefault(url, []).append(json.dumps({"custom_id": cid, "method": "POST", "url": url,
+                                                      "body": _corpo(p["prompt"], p["refs"])}))
+    cab = {"Authorization": f"Bearer {chave()}"}
+    ids = []
+    async with httpx.AsyncClient(timeout=120) as c:
+        for url, linhas in grupos.items():
+            r = await c.post(f"{BASE}/files", headers=cab, data={"purpose": "batch"},
+                             files={"file": ("rodada.jsonl", ("\n".join(linhas) + "\n").encode(), "application/jsonl")})
+            if r.status_code >= 400:
+                raise ArteErro(f"lote: envio do arquivo falhou ({r.status_code}: {r.text[:160]})")
+            r = await c.post(f"{BASE}/batches", headers=cab, json={
+                "input_file_id": r.json()["id"], "endpoint": url, "completion_window": "24h"})
+            if r.status_code >= 400:
+                raise ArteErro(f"lote: criação falhou ({r.status_code}: {r.text[:160]})")
+            ids.append(r.json()["id"])
+    return ids
+
+
+async def lote_status(batch_id: str) -> dict:
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(f"{BASE}/batches/{batch_id}", headers={"Authorization": f"Bearer {chave()}"})
+    r.raise_for_status()
+    return r.json()
+
+
+async def lote_cancelar(batch_id: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            await c.post(f"{BASE}/batches/{batch_id}/cancel", headers={"Authorization": f"Bearer {chave()}"})
+    except Exception:
+        pass
+
+
+async def lote_resultados(output_file_id: str) -> dict[str, bytes]:
+    async with httpx.AsyncClient(timeout=300) as c:
+        r = await c.get(f"{BASE}/files/{output_file_id}/content", headers={"Authorization": f"Bearer {chave()}"})
+    r.raise_for_status()
+    out = {}
+    for linha in r.text.splitlines():
+        try:
+            v = json.loads(linha)
+            b64 = (((v.get("response") or {}).get("body") or {}).get("data") or [{}])[0].get("b64_json")
+        except Exception:
+            continue
+        if b64:
+            out[v["custom_id"]] = base64.b64decode(b64)
+            _hoje()
+            _uso["n"] += 1
+    return out
+
+
 async def criar_arte(modelo: str, d: dict, marca: dict, capa: list[str] | None = None,
                      pagina: tuple[int, int] = (1, 1), capa_img: bytes | None = None,
                      auto: bool = False) -> tuple[bytes, list[str]]:
     """Devolve (jpeg 1080x1350 sem o rodapé, avisos). Levanta ArteErro se a OpenAI não devolver imagem.
     auto=True (rodada/resultado/tabela): até TENTATIVAS e usa a reserva do limite. Notícia (vai para aprovação): 1 tentativa."""
-    import hashlib
     import time
-    chave_cache = hashlib.sha1(json.dumps([modelo, d, pagina, marca.get("handle")], sort_keys=True, default=str)
-                               .encode()).hexdigest()
+    chave_cache = _chave(modelo, d, pagina, marca)
     pronta = _prontas.get(chave_cache)
     if pronta and time.time() - pronta[0] < 21600:
         return pronta[1], list(pronta[2])
