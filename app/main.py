@@ -63,7 +63,35 @@ SESSAO_DIAS = 60
 STATUS_VALIDOS = ("pendente", "publicando", "agendado", "publicado", "recusado", "erro")
 LINHAS = ("noticia", "temporada", "rodada", "resultado", "tabela", "jogador", "manual")
 # linhas que os robôs publicam sem aprovação (pedido do Nog, 16/10/2026)
-LINHAS_AUTO = ("rodada", "resultado", "tabela")
+LINHAS_AUTO = ("rodada", "resultado", "tabela", "noticia")  # notícia só com auto=True (regra abaixo)
+
+# notícia muito relevante de clube grande do Brasileirão A, LaLiga ou Premier sai sem aprovação (pedido do Nog, 17/10/2026)
+NOTA_NOTICIA_AUTO = float(os.getenv("NOTICIAS_NOTA_AUTO", "8"))
+CLUBES_GRANDES = {
+    # Brasileirão Série A
+    "flamengo", "palmeiras", "corinthians", "sao paulo", "santos", "vasco", "fluminense", "botafogo", "gremio",
+    "internacional", "atletico-mg", "atletico mineiro", "galo", "cruzeiro", "bahia",
+    # LaLiga
+    "real madrid", "barcelona", "barca", "atletico de madrid", "atletico madrid",
+    # Premier League
+    "manchester city", "man city", "manchester united", "man united", "liverpool", "arsenal", "chelsea", "tottenham",
+}
+
+
+def _sem_acento(t: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", t or "") if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def noticia_sai_sozinha(post: dict, nota_ef: float, problemas: list) -> bool:
+    """Muito relevante (nota ≥ 8) + clube grande + não é rumor + legenda sem problema."""
+    if nota_ef < NOTA_NOTICIA_AUTO or problemas:
+        return False
+    if "rumor" in _sem_acento(post.get("tag") or "") or "rumor" in _sem_acento(post.get("tag2") or ""):
+        return False
+    jogo = post.get("jogo") if isinstance(post.get("jogo"), dict) else {}
+    nomes = [post.get("clube"), post.get("clube_foto"), jogo.get("casa"), jogo.get("fora")]
+    return any(_sem_acento(n) in CLUBES_GRANDES for n in nomes if n)
 MIME_OK = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "video/mp4": "mp4"}
 
 pool: asyncpg.Pool | None = None
@@ -431,7 +459,8 @@ async def criar_post(
         res = await _aprovar_um(pid, quando, base_publica(), agora=quando is None and linha != "rodada")
         await evento(pid, "auto_aprovado", json.dumps(res))
         asyncio.create_task(enviar_push({
-            "title": {"rodada": "📅 Rodada do dia", "tabela": "📊 Tabela", "resultado": "✅ Resultado"}[linha]
+            "title": {"rodada": "📅 Rodada do dia", "tabela": "📊 Tabela", "resultado": "✅ Resultado",
+                      "noticia": "🚨 Notícia"}[linha]
                      + (" agendada" if quando else " publicada"),
             "body": titulo or legenda[:80], "url": f"/?post={pid}", "tag": f"post-{pid}",
         }))
@@ -1362,6 +1391,7 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
         "fonte_urls": [f["url"] for f in fontes],
         "slides": [montar(True)],
         "aviso": ("🚨 URGENTE · " if urgente else "📰 ") + "notícia para aprovar",
+        "auto": noticia_sai_sozinha(post, nota_ef, problemas),
     }
     try:
         pid, _av = await criar_post_de_slides(pedido, "robo")
