@@ -366,15 +366,17 @@ async def _chamar(prompt: str, refs: list[tuple[bytes, str]], auto: bool = False
     if LIMITE_DIA and not auto and _uso["n"] >= LIMITE_DIA * (1 - RESERVA_AUTO):
         raise ArteErro(f"notícias pausadas hoje: {int(RESERVA_AUTO * 100)}% do limite diário fica para rodada/resultados/tabela")
     cab = {"Authorization": f"Bearer {chave()}"}
+    # JSON (sem imagem de referência) exige número como número; formulário (com referência) manda tudo como texto
     params = {"model": MODELO, "prompt": prompt, "size": TAMANHO, "quality": QUALIDADE,
-              "output_format": "jpeg", "output_compression": "95", "n": "1"}
+              "output_format": "jpeg", "output_compression": 95, "n": 1}
+    form = {k: str(v) for k, v in params.items()}
     for tentativa in range(4):
         try:
             async with _sem:
                 async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20)) as c:
                     if refs:
                         campo = "image[]" if len(refs) > 1 else "image"
-                        r = await c.post(f"{BASE}/images/edits", headers=cab, data=params,
+                        r = await c.post(f"{BASE}/images/edits", headers=cab, data=form,
                                          files=[(campo, (f"ref{i}.png", b, m)) for i, (b, m) in enumerate(refs, 1)])
                     else:
                         r = await c.post(f"{BASE}/images/generations", headers=cab, json=params)
