@@ -1880,7 +1880,8 @@ async def job_status_publora() -> None:
 
 @app.get("/api/perfis")
 async def perfis(_=Depends(exige_login)):
-    rows = await pool.fetch("SELECT id,nome,handle,publora_platform_id,ativo FROM perfis ORDER BY id")
+    # só os perfis ativos (o que caiu e saiu do Publora some da lista)
+    rows = await pool.fetch("SELECT id,nome,handle,publora_platform_id,ativo FROM perfis WHERE ativo ORDER BY id")
     return {"perfis": [dict(r) for r in rows]}
 
 
