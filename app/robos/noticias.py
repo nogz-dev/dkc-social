@@ -278,7 +278,7 @@ def _json(txt: str) -> Any:
 
 
 PUBLICO = (
-    "Público: perfil @seutipster.app no Instagram, torcedores brasileiros de 18 a 40 anos que acompanham "
+    "Público: perfil @seutipsterapp (SeuTipster) no Instagram, torcedores brasileiros de 18 a 40 anos que acompanham "
     "Brasileirão, Libertadores, Copa do Brasil, Sul-Americana e as grandes ligas europeias "
     "(Champions, Premier, LaLiga, Serie A, Bundesliga, Ligue 1) e que gostam de apostar. "
     "Referências de tom: TNT Sports Brasil e CazéTV (direto, informal, sem ser bobo)."

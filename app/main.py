@@ -276,6 +276,10 @@ async def lifespan(app: FastAPI):
     uso_ia.pool = pool
     await vapid()
     await limpeza_unica()
+    try:
+        await sincronizar_perfis()
+    except Exception as e:
+        log.warning("[PERFIS] sincronização no boot falhou: %s", e)
     if not ADMIN_PASSWORD:
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
     tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
@@ -652,7 +656,11 @@ async def _perfil(perfil_id: Optional[int], handle: Optional[str]) -> tuple[Opti
         h = await pool.fetchval("SELECT handle FROM perfis WHERE id=$1", perfil_id)
         return perfil_id, h
     if handle:
-        r = await pool.fetchrow("SELECT id, handle FROM perfis WHERE lower(handle)=lower($1)", handle.lstrip("@"))
+        r = await pool.fetchrow("SELECT id, handle FROM perfis WHERE lower(handle)=lower($1) AND ativo", handle.lstrip("@"))
+        if r:
+            return r["id"], r["handle"]
+        # @ antigo (ex.: perfil que caiu e foi trocado no Publora): vai para o perfil ativo
+        r = await pool.fetchrow("SELECT id, handle FROM perfis WHERE ativo ORDER BY id LIMIT 1")
         if r:
             return r["id"], r["handle"]
         return None, handle.lstrip("@")
@@ -1798,6 +1806,12 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
             "SELECT p.*, pf.publora_platform_id FROM posts p LEFT JOIN perfis pf ON pf.id=p.perfil_id WHERE p.id=$1",
             pid,
         )
+        if not r["publora_platform_id"] or not await pool.fetchval("SELECT ativo FROM perfis WHERE id=$1", r["perfil_id"]):
+            atual = await pool.fetchrow("SELECT id, publora_platform_id FROM perfis WHERE ativo ORDER BY id LIMIT 1")
+            if atual and atual["publora_platform_id"]:
+                await pool.execute("UPDATE posts SET perfil_id=$2 WHERE id=$1", pid, atual["id"])
+                r = dict(r)
+                r["publora_platform_id"], r["perfil_id"] = atual["publora_platform_id"], atual["id"]
         if not r["publora_platform_id"]:
             raise publora.PubloraErro("o post não tem perfil do Instagram vinculado (sincronize os perfis)")
         if r.get("arte_pendente") and r.get("slides"):
@@ -1837,6 +1851,10 @@ async def job_status_publora() -> None:
     while True:
         await asyncio.sleep(600)
         try:
+            await sincronizar_perfis()
+        except Exception as e:
+            log.warning("[PERFIS] sincronização falhou: %s", e)
+        try:
             rows = await pool.fetch(
                 "SELECT id, publora_group_id FROM posts WHERE status='agendado' AND agendar_para < now() - interval '5 minutes'"
             )
@@ -1866,28 +1884,42 @@ async def perfis(_=Depends(exige_login)):
     return {"perfis": [dict(r) for r in rows]}
 
 
+async def sincronizar_perfis() -> dict:
+    """Espelha as contas de Instagram do Publora. Conta que saiu do Publora (perfil que caiu) é desativada e
+    a fila dela (pendentes/erro/publicando) passa para o perfil novo."""
+    cons = await publora.conexoes()
+    ig = [c for c in cons if str(c.get("platformId", "")).startswith("instagram-")
+          and (c.get("connectionStatus") in (None, "active"))]
+    ids = [str(c["platformId"]) for c in ig]
+    for c in ig:
+        handle = c.get("username") or str(c["platformId"])
+        await pool.execute(
+            "INSERT INTO perfis(nome,handle,publora_platform_id,ativo) VALUES($1,$2,$3,true) "
+            "ON CONFLICT (publora_platform_id) DO UPDATE SET handle=EXCLUDED.handle, ativo=true",
+            c.get("displayName") or handle, handle, str(c["platformId"]))
+    movidos = 0
+    if ids:
+        orfaos = [r["id"] for r in await pool.fetch(
+            "SELECT id FROM perfis WHERE ativo AND (publora_platform_id IS NULL OR publora_platform_id <> ALL($1::text[]))", ids)]
+        if orfaos:
+            novo = await pool.fetchval("SELECT id FROM perfis WHERE publora_platform_id = $1", ids[0])
+            if len(ids) == 1 and novo:
+                movidos = len(await pool.fetch(
+                    "UPDATE posts SET perfil_id=$2 WHERE perfil_id = ANY($1::int[]) "
+                    "AND status IN ('pendente','erro','publicando') RETURNING id", orfaos, novo))
+            await pool.execute("UPDATE perfis SET ativo=false WHERE id = ANY($1::int[])", orfaos)
+            log.info("[PERFIS] desativados %s (saíram do Publora); %d posts passaram para o perfil novo", orfaos, movidos)
+    return {"sincronizados": len(ig), "posts_movidos": movidos, "conexoes": [
+        {"platformId": c.get("platformId"), "username": c.get("username"), "tokenStatus": c.get("tokenStatus"),
+         "expira": c.get("accessTokenExpiresAt")} for c in cons]}
+
+
 @app.post("/api/perfis/sincronizar")
 async def sincronizar(_=Depends(exige_login)):
     try:
-        cons = await publora.conexoes()
+        return await sincronizar_perfis()
     except publora.PubloraErro as e:
         raise HTTPException(502, str(e))
-    n = 0
-    for c in cons:
-        pid = str(c.get("platformId", ""))
-        if not pid.startswith("instagram-"):
-            continue
-        handle = c.get("username") or pid
-        await pool.execute(
-            "INSERT INTO perfis(nome,handle,publora_platform_id) VALUES($1,$2,$3) "
-            "ON CONFLICT (publora_platform_id) DO UPDATE SET handle=EXCLUDED.handle",
-            c.get("displayName") or handle, handle, pid,
-        )
-        n += 1
-    return {"sincronizados": n, "conexoes": [
-        {"platformId": c.get("platformId"), "username": c.get("username"), "tokenStatus": c.get("tokenStatus"),
-         "expira": c.get("accessTokenExpiresAt")} for c in cons
-    ]}
 
 
 @app.get("/api/saude")

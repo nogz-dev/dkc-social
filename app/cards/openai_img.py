@@ -42,7 +42,7 @@ QUALIDADE = os.getenv("OPENAI_IMAGE_QUALITY", "high")
 LIMITE_DIA = int(os.getenv("OPENAI_IMAGENS_DIA", "400"))     # trava de segurança de custo
 MODELO_CONF = os.getenv("ARTE_MODELO_CONFERENCIA", "claude-sonnet-5-5")
 RAIZ = Path(__file__).resolve().parents[2]
-MANUAIS = {"seutipster.app": "seu-tipster"}   # @ do perfil → pasta do manual
+MANUAIS = {"seutipster.app": "seu-tipster", "seutipsterapp": "seu-tipster"}   # @ do perfil → pasta do manual
 AVISO_REVISAR = "revisar a arte"
 TENTATIVAS = int(os.getenv("OPENAI_TENTATIVAS", "2"))   # 1ª + refações quando a revisão acha erro
 

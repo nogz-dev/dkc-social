@@ -182,3 +182,10 @@ campeonatos = 5 páginas (`RODADA_MAX_LIGAS`). A legenda continua citando todos 
 - Pedido para a OpenAI ~30% menor: diretor de arte 1–9 inteiro e 10–13 resumido; do manual só cores/personalidade,
   "o que evitar" e o tipo do post; regras sem repetição.
 - Revisão automática só pede refação por erro real (dados, marca de terceiros, corte, texto sobre texto, rosto deformado).
+
+## Troca de perfil do Instagram (03/11/2026)
+
+O perfil antigo (`instagram-17841415005174338`, @seutipster.app) caiu; o novo no Publora é `instagram-17841457853570954`
+(@seutipsterapp). O servidor sincroniza os perfis com o Publora no boot e a cada 10 min: conta que sumiu do Publora é
+desativada e a fila dela passa para a conta nova; pedidos com o @ antigo vão para o perfil ativo. Marca e manual valem
+para os dois @.

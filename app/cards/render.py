@@ -32,6 +32,7 @@ MARCAS: dict[str, dict[str, str]] = {
         "bg": "#0A0C09", "ink": "#F2F2F2", "mute": "#8C9188", "logo": "seutipster.png",
     },
 }
+MARCAS["seutipsterapp"] = MARCAS["seutipster.app"]  # @ novo (perfil trocado em 03/11/2026)
 MARCA_PADRAO = {
     "nome": "DKC", "cor": "#FDD918", "cor_ink": "#0A0A0A",
     "bg": "#0A0A0A", "ink": "#FAFAFA", "mute": "#8C8C8C", "logo": "",
