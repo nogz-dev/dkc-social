@@ -145,6 +145,8 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS fonte_urls JSONB NOT NULL DEFAULT '[]
 -- arte só ao aprovar (notícia): guarda os slides; a OpenAI cria a arte final quando o Nog aprova
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS slides JSONB;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS arte_pendente BOOLEAN NOT NULL DEFAULT false;
+-- espelho na Comunidade do SeuTipster: marca o que ja foi mandado (nao duplica)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS espelhado_em TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS posts_status_idx ON posts(status, criado_em DESC);
 CREATE TABLE IF NOT EXISTS midias (
   id UUID PRIMARY KEY,
@@ -284,7 +286,8 @@ async def lifespan(app: FastAPI):
         log.warning("[BOOT] ADMIN_PASSWORD não definida — login bloqueado até configurar")
     tasks = [asyncio.create_task(job_status_publora()), asyncio.create_task(job_pauta()), asyncio.create_task(job_rodada()),
              asyncio.create_task(job_noticias()), asyncio.create_task(job_resultados()),
-             asyncio.create_task(job_tabelas_resumo())]
+             asyncio.create_task(job_tabelas_resumo()),
+             asyncio.create_task(job_espelho_seutipster())]
     yield
     for t in tasks:
         t.cancel()
@@ -1843,6 +1846,71 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
         await pool.execute("UPDATE posts SET status='erro', erro=$2 WHERE id=$1", pid, msg)
         await evento(pid, "erro", msg)
         await enviar_push({"title": "⚠️ Falha ao publicar", "body": msg[:120], "url": f"/?post={pid}"})
+
+
+# --------------------------------------------- espelho no SeuTipster ----
+# O mesmo conteudo que vai pro Instagram tambem vira post na Comunidade do app.
+# Independe da fila de aprovacao: o que importa e a HORA do post, nao o Nog ter
+# clicado. A arte nao e copiada — mandamos a URL publica de /m/{token}, que e a
+# mesma imagem, servida uma vez so.
+ESPELHO_LIGADO = os.getenv("ESPELHO_SEUTIPSTER", "1") != "0"
+ESPELHO_PUSH = {x.strip() for x in os.getenv("ESPELHO_PUSH_LINHAS", "rodada,resultado").split(",") if x.strip()}
+ESPELHO_ATRASO_MAX_H = int(os.getenv("ESPELHO_ATRASO_MAX_H", "6"))   # post velho nao vai; so e marcado
+
+
+async def espelhar_um(r, base: str) -> None:
+    alvo = os.getenv("SEUTIPSTER_URL", "").rstrip("/")
+    chave = os.getenv("SEUTIPSTER_ROBO_KEY", "")
+    midias = await pool.fetch("SELECT token,mime FROM midias WHERE post_id=$1 ORDER BY ordem", r["id"])
+    urls = [f"{base}/m/{m['token']}.{MIME_OK[m['mime']]}" for m in midias
+            if m["mime"] in MIME_OK and m["mime"].startswith("image/")]
+    corpo = {
+        "ref": f"dkc-{r['id']}",
+        "linha": r["linha"],
+        "texto": r["legenda"] or r["titulo"] or "",
+        "midias": urls[:10],
+        "push": r["linha"] in ESPELHO_PUSH,
+    }
+    async with httpx.AsyncClient(timeout=30) as c:
+        resp = await c.post(f"{alvo}/api/robo/comunidade", json=corpo, headers={"x-robo-key": chave})
+        resp.raise_for_status()
+
+
+async def job_espelho_seutipster() -> None:
+    """A cada 2 min manda pra Comunidade do SeuTipster os posts cuja hora chegou.
+    Na estreia (e pra post atrasado) so marca como espelhado, sem mandar — senao o
+    primeiro deploy despejaria o historico inteiro no feed de todo mundo."""
+    await asyncio.sleep(45)
+    while True:
+        try:
+            if ESPELHO_LIGADO and os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"):
+                base = base_publica()
+                if base.startswith("https://"):
+                    rows = await pool.fetch(
+                        """SELECT id, linha, titulo, legenda,
+                                  COALESCE(agendar_para, sugerido_para, criado_em) AS quando
+                             FROM posts
+                            WHERE espelhado_em IS NULL
+                              AND status <> 'recusado'
+                              AND arte_pendente = false
+                              AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()
+                            ORDER BY quando
+                            LIMIT 5"""
+                    )
+                    for r in rows:
+                        atrasado = (datetime.now(timezone.utc) - r["quando"]).total_seconds() > ESPELHO_ATRASO_MAX_H * 3600
+                        try:
+                            if not atrasado:
+                                await espelhar_um(r, base)
+                                log.info("[ESPELHO] post %s (%s) foi pra Comunidade", r["id"], r["linha"])
+                            else:
+                                log.info("[ESPELHO] post %s ignorado: atrasado mais de %sh", r["id"], ESPELHO_ATRASO_MAX_H)
+                            await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
+                        except Exception as e:
+                            log.warning("[ESPELHO] post %s falhou, tenta de novo: %s", r["id"], str(e)[:200])
+        except Exception:
+            log.exception("[JOB] espelho seutipster")
+        await asyncio.sleep(120)
 
 
 async def job_status_publora() -> None:
