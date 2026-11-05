@@ -268,6 +268,18 @@ async def limpeza_unica() -> None:
     log.info("[BOOT] limpeza da fila: %d posts recusados", len(ids))
 
 
+async def segurar_auto_unico() -> None:
+    """Pedido do Nog (05/11/2026, 19h48): as artes AO VIVO ficaram feias na prática; até o visual novo (estilo
+    TNT/CazéTV) ser aprovado, nada sai sozinho. Equivale a desligar "Resultados automáticos" em Ajustes
+    (o Nog religa por lá quando aprovar). Roda uma vez só."""
+    marca = "segurar_auto_2026_11_05"
+    if await cfg_get(marca):
+        return
+    await cfg_set("auto_resultado", "0")
+    await cfg_set(marca, datetime.now(timezone.utc).isoformat())
+    log.info("[BOOT] publicação automática desligada: tudo passa pela fila até a arte nova ser aprovada")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -278,6 +290,7 @@ async def lifespan(app: FastAPI):
     uso_ia.pool = pool
     await vapid()
     await limpeza_unica()
+    await segurar_auto_unico()
     try:
         await sincronizar_perfis()
     except Exception as e:
@@ -1863,16 +1876,19 @@ async def job_espelho_seutipster() -> None:
             if ESPELHO_LIGADO and os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"):
                 base = base_publica()
                 if base.startswith("https://"):
+                    # "Resultados automáticos" desligado em Ajustes = tudo passa pela fila, inclusive a Comunidade
+                    so_aprovados = not await auto_resultado_ligado()
                     rows = await pool.fetch(
                         """SELECT id, linha, titulo, legenda,
                                   COALESCE(agendar_para, sugerido_para, criado_em) AS quando
                              FROM posts
                             WHERE espelhado_em IS NULL
                               AND status <> 'recusado'
+                              AND ($1::boolean = false OR status IN ('agendado','publicando','publicado'))
                               AND arte_pendente = false
                               AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()
                             ORDER BY quando
-                            LIMIT 5"""
+                            LIMIT 5""", so_aprovados
                     )
                     for r in rows:
                         atrasado = (datetime.now(timezone.utc) - r["quando"]).total_seconds() > ESPELHO_ATRASO_MAX_H * 3600
