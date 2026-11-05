@@ -280,6 +280,19 @@ async def segurar_auto_unico() -> None:
     log.info("[BOOT] publicação automática desligada: tudo passa pela fila até a arte nova ser aprovada")
 
 
+async def espelho_so_formato_novo() -> None:
+    """Uma vez só: o que foi criado antes do formato novo (no ar às 20h28 de 05/11/2026) e ainda não foi
+    para a Comunidade fica marcado como enviado, sem enviar (arte antiga não vai para o app)."""
+    marca = "espelho_formato_novo_2026_11_05"
+    if await cfg_get(marca):
+        return
+    n = await pool.fetchval(
+        "WITH x AS (UPDATE posts SET espelhado_em=now() WHERE espelhado_em IS NULL "
+        "AND criado_em < '2026-11-05T23:28:00Z'::timestamptz RETURNING 1) SELECT count(*) FROM x")
+    await cfg_set(marca, datetime.now(timezone.utc).isoformat())
+    log.info("[BOOT] espelho: %s posts antigos marcados para não ir à Comunidade", n)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -291,6 +304,7 @@ async def lifespan(app: FastAPI):
     await vapid()
     await limpeza_unica()
     await segurar_auto_unico()
+    await espelho_so_formato_novo()
     try:
         await sincronizar_perfis()
     except Exception as e:
@@ -1828,19 +1842,18 @@ async def job_espelho_seutipster() -> None:
             if ESPELHO_LIGADO and os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"):
                 base = base_publica()
                 if base.startswith("https://"):
-                    # "Resultados automáticos" desligado em Ajustes = tudo passa pela fila, inclusive a Comunidade
-                    so_aprovados = not await auto_resultado_ligado()
+                    # a Comunidade recebe tudo sozinha, sem passar pela fila (pedido do Nog, 05/11/2026 20h28);
+                    # "Resultados automáticos" em Ajustes vale só para o Instagram
                     rows = await pool.fetch(
                         """SELECT id, linha, titulo, legenda,
                                   COALESCE(agendar_para, sugerido_para, criado_em) AS quando
                              FROM posts
                             WHERE espelhado_em IS NULL
                               AND status <> 'recusado'
-                              AND ($1::boolean = false OR status IN ('agendado','publicando','publicado'))
                               AND arte_pendente = false
                               AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()
                             ORDER BY quando
-                            LIMIT 5""", so_aprovados
+                            LIMIT 5"""
                     )
                     for r in rows:
                         atrasado = (datetime.now(timezone.utc) - r["quando"]).total_seconds() > ESPELHO_ATRASO_MAX_H * 3600
