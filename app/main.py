@@ -1153,16 +1153,7 @@ async def ciclo_resultados() -> dict[str, Any]:
         try:
             gs = await robo_resultados.gols(fid)
             pedido = robo_resultados.montar(j, gs, handle)
-            d0 = pedido["slides"][0]["dados"]
-            await foto_do_jogo(j, gs, pedido)  # sem foto conferida a arte sai sem jogador (sai sozinho igual)
-            try:
-                pid, _av = await criar_post_de_slides(pedido, "robo")
-            except HTTPException as e:
-                if e.status_code != 422:
-                    raise
-                # foto do jogador não baixou: sai sem foto (estádio vazio nunca entra no lugar do jogador)
-                d0["foto"], d0["credito_foto"], d0["destaque"] = None, None, None
-                pid, _av = await criar_post_de_slides(pedido, "robo")
+            pid, _av = await criar_post_de_slides(pedido, "robo")  # só escudos (pedido do Nog, 05/11/2026)
             await pool.execute(
                 "INSERT INTO resultados(fixture_id,status,post_id) VALUES($1,'postado',$2) "
                 "ON CONFLICT (fixture_id) DO UPDATE SET status='postado', post_id=EXCLUDED.post_id, erro=NULL, em=now()",
@@ -1478,64 +1469,25 @@ async def escrever_post_noticia(aid: int, titulo_assunto: str, nota_ef: float) -
     legenda = robo_noticias.corrigir_legenda(post["legenda"])
     problemas = robo_noticias.checar_legenda(legenda)
 
-    # foto: só jogador conferido (API-Football + busca + checagem por IA). Nunca imagem de matéria/arte de outro canal.
-    foto, credito = None, None
-    try:
-        fv = await foto_jogador.foto_verificada(post.get("pessoa_foto"), post.get("clube_foto") or post.get("clube"))
-    except Exception:
-        log.exception("[NOTICIAS] foto do jogador")
-        fv = None
-    foto_tipo, rosto = None, None
-    if fv:
-        foto, credito, rosto = fv["url"], fv["credito"], fv.get("rosto")
-        foto_tipo = "retrato" if fv.get("tipo") == "retrato" else "jogador"
+    # card SÓ COM TEXTO (pedido do Nog, 05/11/2026): manchete, o texto da matéria e a fonte. Sem foto e sem escudo,
+    # então o robô nem procura foto (economiza a conferência por IA).
     urgente = bool(post.get("urgente")) or nota_ef >= robo_noticias.NOTA_URGENTE
-    # card no visual AO VIVO: kicker (editoria) + competição + manchete com UM trecho em verde + apoio + fonte
-    base_dados = {
+    dados = {
         "kicker": post.get("tag") or ("Urgente" if urgente else "Notícia"),
         "competicao": post.get("tag2"), "titulo": post["titulo_card"][:90],
-        "apoio": post.get("linha_fina"),
+        "texto": post.get("texto_card") or post.get("linha_fina"),
         "hora": datetime.now(robo_rodada.TZ).strftime("%H:%M"),  # carimbo do urgente (quando a notícia chegou)
     }
-    # escudos oficiais (API-Football): ficam no lugar da foto quando não há jogador conferido
-    jogo = post.get("jogo") if isinstance(post.get("jogo"), dict) else {}
-    esc_clube, esc_casa, esc_fora = await asyncio.gather(
-        clubes.escudo(post.get("clube") or post.get("clube_foto")),
-        clubes.escudo(jogo.get("casa")) if jogo.get("casa") else asyncio.sleep(0),
-        clubes.escudo(jogo.get("fora")) if jogo.get("fora") else asyncio.sleep(0),
-    )
-    # palavra em contorno (fundo do card sem foto): a da redação ou o nome do clube, só se couber inteira
-    palavra = next((p.strip().upper() for p in (post.get("palavra"), post.get("clube"))
-                    if p and 0 < len(p.strip()) <= 10), None)
-
-    def montar(com_foto: bool) -> dict:
-        """Prioridade da zona de foto (manual): jogador conferido › retrato oficial › escudos › palavra-fantasma."""
-        d = dict(base_dados, palavra=palavra)
-        if com_foto and foto:
-            d.update(foto=foto, credito_foto=credito, foto_tipo=foto_tipo, rosto=rosto,
-                     jogador={"nome": post.get("pessoa_foto"), "clube": post.get("clube_foto") or post.get("clube")})
-        if esc_casa and esc_fora:
-            d.update(escudo_casa=esc_casa["logo"], escudo_fora=esc_fora["logo"])
-        if esc_clube:
-            d["escudo"] = esc_clube["logo"]
-        return {"modelo": "urgente" if urgente else "noticia", "dados": d}
 
     pedido = {
         "perfil": None, "linha": "noticia", "titulo": titulo_assunto[:200], "legenda": legenda,
         "fonte": post.get("fonte_nome") or fontes[0]["fonte"],
         "fonte_urls": [f["url"] for f in fontes],
-        "slides": [montar(True)],
+        "slides": [{"modelo": "urgente" if urgente else "noticia", "dados": dados}],
         "aviso": ("🚨 URGENTE · " if urgente else "📰 ") + "notícia para aprovar",
         "auto": noticia_sai_sozinha(post, nota_ef, problemas),
     }
-    try:
-        pid, _av = await criar_post_de_slides(pedido, "robo")
-    except HTTPException as e:
-        if not (foto and e.status_code == 422):
-            raise
-        # a foto não baixou: monta o card sem jogador (escudo/confronto/editoria)
-        pedido["slides"] = [montar(False)]
-        pid, _av = await criar_post_de_slides(pedido, "robo")
+    pid, _av = await criar_post_de_slides(pedido, "robo")
     await pool.execute("UPDATE assuntos SET status='postado', post_id=$2, postado_em=now() WHERE id=$1", aid, pid)
     if problemas:
         await evento(pid, "checagem_legenda", "; ".join(problemas))

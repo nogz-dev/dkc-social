@@ -127,6 +127,16 @@ async def jogos_do_dia(dia: date) -> list[dict]:
     return out
 
 
+def _jogo(j: dict, com_liga: bool = False) -> dict:
+    """Linha de jogo para os cards: horário, times e escudos (logos oficiais da API-Football)."""
+    out = {"hora": hora(j["fixture"]["date"]),
+           "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
+           "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo")}
+    if com_liga:
+        out["liga"] = IDS[j["league"]["id"]]["curto"]
+    return out
+
+
 def _meta(j: dict) -> dict:
     """Ids para o servidor escolher o jogador em destaque (não vira texto da arte)."""
     return {"liga": j["league"]["id"], "temporada": j["league"].get("season"),
@@ -167,20 +177,21 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
                    "qtd": _jogos_txt(sum(len(l) for i, l, _ in paginas if i == lid)),
                    "hora": min(hora(j["fixture"]["date"]) for i, l, _ in paginas if i == lid for j in l)}
                   for lid in incluidas],
-        # sem foto conferida do jogador, a capa mostra os escudos do jogo em destaque
-        "escudo_casa": destaque["teams"]["home"].get("logo"), "escudo_fora": destaque["teams"]["away"].get("logo"),
-        "meta": _meta(destaque),
+        # só escudos (pedido do Nog, 05/11/2026): o jogo em destaque e, em dia de até 5 jogos, a lista dos jogos
+        "jogo_destaque": _jogo(destaque, com_liga=True),
+        "jogos": [_jogo(j) for j in no_carrossel] if total <= 5 else [],
     }}]
     for lid, lista, parte in paginas:
         slides.append({"modelo": "rodada", "dados": {
             "fase": fase_placa(lista[0]["league"].get("round", "")) or "Hoje",
             "data": placa, "liga": IDS[lid]["nome"], "parte": parte,
-            "jogos": [{
-                "hora": hora(j["fixture"]["date"]),
-                "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
-                "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
-            } for j in lista],
+            "jogos": [_jogo(j) for j in lista],
         }})
+
+    # dia de até 3 jogos: a capa já mostra todos (escudos + horário), então o post é uma imagem só
+    if total <= 3:
+        slides = slides[:1]
+        slides[0]["dados"]["arrasta"] = False
 
     # legenda (regras da skill: gancho nos 125 primeiros caracteres, 3 a 5 hashtags, número concreto)
     linhas = []
@@ -193,7 +204,7 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
     gancho = f"{total} jogo{'s' if total != 1 else ''} hoje nas principais ligas, e o destaque é {casa_d} x {fora_d}."
     legenda = (
         f"{gancho}\n\n" + "\n".join(linhas) +
-        "\n\nArrasta pro lado e salva pra não perder nenhum horário.\n\n"
+        ("\n\nArrasta pro lado e salva pra não perder nenhum horário.\n\n" if total > 3 else "\n\nSalva pra não perder nenhum horário.\n\n") +
         "Quer palpite pra esses jogos? Tem análise de todos no app SeuTipster, link na bio.\n\n"
         "#futebol #rodadadodia #palpites #SeuTipster"
     )
@@ -207,6 +218,6 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "titulo": f"Rodada do dia · {data_curta} · {total} jogos",
         "legenda": legenda, "fonte": "API-Football",
         "sugerido_para": sug.isoformat(),
-        "foto_opcional": True,  # foto do jogador que não baixar não derruba o carrossel (a capa sai com os escudos)
+        "foto_opcional": True,  # escudo que não baixar não derruba o carrossel
         "slides": slides,
     }

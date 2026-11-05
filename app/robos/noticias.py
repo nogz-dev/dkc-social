@@ -328,14 +328,11 @@ Devolva SOMENTE um objeto JSON:
  "tag": editoria do card em 1 ou 2 palavras (ex.: "Mercado", "Bastidores", "Lesão", "Demitido", "Polêmica", "Recorde", "Seleção", "Apostas"; se for rumor/negociação não confirmada use "Rumor"),
  "tag2": competição por extenso (ex.: "Brasileirão Série A", "Premier League", "LaLiga", "Champions League", "Libertadores") ou null,
  "titulo_card": manchete do card com NO MÁXIMO 8 palavras: sujeito e verbo logo no começo, voz ativa, factual, sem adjetivo de enchimento (ex.: "Real Madrid *demite Xabi Alonso* após derrota"). Marque UM ÚNICO trecho de 1 a 3 palavras entre *asteriscos*: é a parte que vai em verde (nunca dois trechos),
- "linha_fina": linha de apoio OBRIGATÓRIA: 1 frase de até 110 caracteres que completa a manchete com o dado mais forte da fonte (valor, prazo, placar, quem confirmou), sem repetir a manchete,
+ "texto_card": o texto da matéria que vai no card (o card é SÓ TEXTO, sem imagem): 2 ou 3 frases, de 180 a 320 caracteres, com os fatos principais (quem, o quê, valor/prazo/placar, quem confirmou), sem repetir a manchete, sem emoji e sem hashtag,
  "legenda": a legenda completa (regras abaixo),
- "pessoa_foto": nome completo do jogador/técnico protagonista para buscar foto, ou null,
- "clube_foto": clube atual dessa pessoa, ou null,
  "clube": clube protagonista da notícia (nome curto, ex.: "Flamengo", "Real Madrid"), ou null,
  "jogo": se a notícia é sobre UM jogo específico: {"casa": time mandante, "fora": time visitante, "quando": ex. "Hoje · 21h30" (só se a fonte disser)}; senão null,
  "editoria": "apostas" (regulação/mercado de apostas) | "mercado" (transferências) | "jogo" | "lesao" | "tecnico" | "selecao" | "polemica" | "outro",
- "palavra": UMA palavra curta (até 8 letras) para o grafismo de fundo quando não houver foto: sigla/apelido do clube ou o tema (ex.: "SPFC", "CITY", "BETS"); ou null,
  "fonte_nome": nome do veículo que deu a informação principal,
  "urgente": true só se for bomba de nota 9–10
 }

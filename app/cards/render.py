@@ -145,10 +145,15 @@ def _adaptar(modelo: str, d: dict) -> str:
         sinais = (str(d.get("editoria") or ""), str(d.get("tag") or ""), str(d.get("kicker") or ""))
         if d.get("urgente") or any(s.strip().lower() == "urgente" for s in sinais):
             m = "urgente"
-    if m in ("noticia", "urgente", "capa_rodada", "resultado"):
-        # retrato oficial (rosto pequeno da API-Football) não aguenta foto sangrando: vai emoldurado
-        if d.get("foto") and d.get("foto_tipo") == "retrato":
-            d["retrato"], d["foto"] = d["foto"], None
+    if m in ("noticia", "urgente"):
+        # só a escrita (pedido do Nog, 05/11/2026): nenhuma foto, nenhum escudo
+        for k in ("foto", "credito_foto", "escudo", "escudo_casa", "escudo_fora", "logo_liga"):
+            d[k] = None
+        d["texto"] = d.get("texto") or d.get("apoio")
+    if m in ("capa_rodada", "resultado"):
+        d["foto"], d["credito_foto"] = None, None  # jogos e placar: só escudos, sem foto de jogador
+    if d.get("foto") and d.get("foto_tipo") == "retrato":
+        d["foto"], d["credito_foto"] = None, None  # rosto pequeno da API nunca vai para a arte
     if m == "resultado":
         d.setdefault("competicao", " · ".join(x for x in (d.get("tag2"), d.get("fase")) if x) or None)
     rosto = d.get("rosto")
@@ -183,17 +188,12 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
         tarefas.append(principal())
     for k in ("escudo", "logo_liga", "escudo_casa", "escudo_fora"):
         tarefas.append(opcional(d, k))
-    tarefas.append(opcional(d, "retrato", 400))
-    for j in d.get("jogos") or []:
-        tarefas.append(opcional(j, "escudo_casa", 160))
-        tarefas.append(opcional(j, "escudo_fora", 160))
+    for j in (d.get("jogos") or []) + ([d["jogo_destaque"]] if isinstance(d.get("jogo_destaque"), dict) else []):
+        tarefas.append(opcional(j, "escudo_casa", 240))
+        tarefas.append(opcional(j, "escudo_fora", 240))
     for r in d.get("linhas") or []:
         tarefas.append(opcional(r, "escudo", 120))
     await asyncio.gather(*tarefas)
-    if modelo == "arte":  # selo sobre a arte da OpenAI (caminho desligado por padrão)
-        return avisos
-    if not d.get("foto") and modelo in ("noticia", "urgente", "capa_rodada"):
-        avisos.append("card sem foto de jogador" + (" (retrato oficial emoldurado)" if d.get("retrato") else ""))
     return avisos
 
 
@@ -227,6 +227,8 @@ class Renderizador:
         for k in ("jogos", "linhas", "ligas"):
             if d.get(k):
                 d[k] = [dict(x) for x in d[k]]
+        if isinstance(d.get("jogo_destaque"), dict):
+            d["jogo_destaque"] = dict(d["jogo_destaque"])
         tpl_nome = _adaptar(modelo, d)
         avisos = await _resolver_imagens(tpl_nome, d)
         tpl = _env.get_template(f"{tpl_nome}.html")

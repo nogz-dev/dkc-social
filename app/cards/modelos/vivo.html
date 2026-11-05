@@ -54,7 +54,7 @@ body{color:#fff;font-family:CardInter,sans-serif;-webkit-font-smoothing:antialia
   line-height:.8;color:transparent;-webkit-text-stroke:3px #2A2A2A;white-space:nowrap;text-transform:uppercase}
 
 /* manchete: Anton caixa-alta, um único trecho em verde */
-.manchete{font-family:Anton,Impact,sans-serif;font-weight:400;text-transform:uppercase;line-height:1.02;letter-spacing:.6px;
+.manchete{font-family:Anton,Impact,sans-serif;font-weight:400;text-transform:uppercase;line-height:1.14;letter-spacing:.6px;
   color:#fff;text-wrap:balance;padding-top:.06em}
 .manchete em{font-style:normal;color:var(--verde)}
 .nb{white-space:nowrap}
@@ -69,6 +69,7 @@ body{color:#fff;font-family:CardInter,sans-serif;-webkit-font-smoothing:antialia
   align-items:center;justify-content:space-between}
 .assinatura .marca{font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:28px;letter-spacing:2.6px;color:#fff}
 .assinatura .marca span{color:var(--verde)}
+.assinatura img.logo{height:40px;display:block}
 .assinatura .handle{font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:22px;letter-spacing:2.4px;color:#A3A3A3}
 {% block estilo %}{% endblock %}
 </style></head>
@@ -77,7 +78,7 @@ body{color:#fff;font-family:CardInter,sans-serif;-webkit-font-smoothing:antialia
   <div class="topo"></div>
   {% block corpo %}{% endblock %}
   <div class="assinatura">
-    <div class="marca">{{ marca.assinatura[0] }}<span>{{ marca.assinatura[1] }}</span></div>
+    {% if marca.logo %}<img class="logo" src="{{ marca.logo }}" alt="">{% else %}<div class="marca">{{ marca.assinatura[0] }}<span>{{ marca.assinatura[1] }}</span></div>{% endif %}
     <div class="handle">@{{ marca.handle|upper }}</div>
   </div>
 </div>

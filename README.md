@@ -41,6 +41,13 @@ POST /api/robo/posts   (header x-robo-key)
 }
 ```
 
+## Cards: notícia só com texto, jogos e tabela com escudos (05/11/2026, noite)
+Pedido do Nog depois de ver as primeiras artes no ar: **notícias e infos só com a escrita, sem imagem nenhuma**
+(editoria, competição, manchete, o texto da matéria e a fonte); **jogos e classificação no layout com os escudos**.
+Nenhuma foto de jogador entra em arte nenhuma (o robô nem procura foto). A capa da Rodada mostra o jogo em destaque
+com os escudos e, em dia de até 5 jogos, os outros jogos; com até 3 jogos o post é uma imagem só. A redação entrega
+`texto_card` (2 ou 3 frases da matéria) para o card. O rodapé usa o logotipo oficial.
+
 ## Cards: direção de arte "AO VIVO" (desde 05/11/2026)
 Cards 1080×1350 em `app/cards/modelos` (Jinja2 + Chromium headless), feitos pelos templates próprios: custo zero por
 imagem. A OpenAI saiu por custo e só volta com `IMAGENS_OPENAI=1`. Fotos e escudos são baixados no servidor
