@@ -41,11 +41,33 @@ POST /api/robo/posts   (header x-robo-key)
 }
 ```
 
-## Cards (fatia 2)
-Modelos 1080×1350 em `app/cards/modelos` (Jinja2 + Chromium headless):
-`noticia` · `jogador` · `rodada` · `resultado`. Fotos e escudos são baixados no
-servidor (anti-SSRF) e embutidos. `*palavra*` no título vira destaque na cor da marca.
-Marcas por perfil em `app/cards/render.py` (`MARCAS`).
+## Cards: direção de arte "AO VIVO" (desde 05/11/2026)
+Cards 1080×1350 em `app/cards/modelos` (Jinja2 + Chromium headless), feitos pelos templates próprios: custo zero por
+imagem. A OpenAI saiu por custo e só volta com `IMAGENS_OPENAI=1`. Fotos e escudos são baixados no servidor
+(anti-SSRF) e embutidos. Marcas por perfil em `app/cards/render.py` (`MARCAS`).
+
+Manual (doc "DKC SOCIAL — Direção de Arte AO VIVO"): preto sinal, verde Tipster `#86FF5C` como estrutura (placa
+diagonal a −10°, régua, selo ST, hachura), nunca marca-texto atrás da frase. Anton nas manchetes e placares, Barlow
+Condensed nas placas e nomes, Inter no apoio. Moldura fixa: régua de topo de 12px e assinatura de 104px (SEU + TIPSTER,
+@SEUTIPSTERAPP). Base: `vivo.html`; peças repetidas: `_vivo.html`.
+
+| Modelo | Quem usa | Dados principais |
+|---|---|---|
+| `capa_rodada` | Rodada do dia (slide 1) | `data`, `chamada`, `destaque`, `ligas[{nome,qtd,hora}]`, foto do artilheiro ou escudos do jogo em destaque |
+| `rodada` | Rodada (1 por campeonato) | `fase`, `data`, `liga`, `parte`, `jogos[{hora,casa,fora,escudo_casa,escudo_fora}]` — até 10; com até 3 jogos vira "duelo" grande |
+| `noticia` / `urgente` | Robô de notícias | `kicker`, `competicao`, `titulo` (um `*trecho*` em verde), `apoio`, `hora` (urgente), foto ou escudos; fonte no rodapé |
+| `resultado` | Placar por jogo (desligado por padrão) | `competicao`, times, gols, escudos, `autores_casa/fora`, `destaque` |
+| `resumo` | Resultados do dia | `data`, `parte`, `jogos[{liga,casa,fora,gols_casa,gols_fora,escudos,penaltis}]` — até 6 por slide |
+| `tabela` | Fim de rodada | `liga`, `fase`, `parte`, `linhas[{pos,time,escudo,pts,j,v,sg,zona}]`, `legenda` |
+
+- Zona de foto: jogador conferido sangrando, com o rosto na metade de cima (a conferência da foto devolve onde está o
+  rosto) › retrato oficial emoldurado com o nome › escudos sobre a hachura › palavra em contorno. Estádio vazio nunca entra.
+- Manchete: até 8 palavras, um único trecho em verde (vale o 1º `*trecho*`; outros asteriscos somem). Texto que não
+  cabe encolhe, nunca corta. Linhas e letras com respiro (pedido do Nog: nada colado).
+- Vermelho só no urgente. Escudo escuro (ex.: Tottenham) ganha um contorno claro fino para não sumir no preto.
+- Nomes antigos (`destaque`, `confronto`, `clube`, `editorial`, `jogador`, `heroi`) continuam aceitos (pauta do chat,
+  posts na fila) e saem no visual novo.
+- O espelho da Comunidade do SeuTipster manda as mesmas imagens.
 
 - `POST /api/robo/cards` (header `x-robo-key`): `{perfil_handle, linha, titulo, legenda, fonte, slides:[{modelo, dados}]}`
 - `POST /api/cards/preview` (logado): devolve o JPEG de um slide
@@ -60,11 +82,11 @@ re-tentados até 3 vezes. Variáveis opcionais: `GITHUB_TOKEN`, `PAUTA_REPO`,
 Pré-visualizar localmente: `CARD_ALLOW_FILE=1 python -m tools.preview pauta.json saida/`
 
 ## Robô da Rodada do dia
-Todo dia às 7h (`RODADA_HORA`) busca na API-Football os jogos das ligas
+Todo dia às 6h (`RODADA_HORA`) busca na API-Football os jogos das ligas
 prioritárias (Libertadores, Brasileirão, Copa do Brasil, Sul-Americana,
-Champions, Premier, LaLiga, Serie A, Bundesliga, Ligue 1) e manda um carrossel
-para a fila com sugestão de publicar às 9h: capa + card de destaque para ligas
-com até 2 jogos + lista por liga. Precisa de `API_FOOTBALL_KEY`.
+Champions, Premier, LaLiga, Serie A, Bundesliga, Ligue 1) e publica sem aprovação
+às 9h (ou 1h antes do 1º jogo): capa "Quinta de 14 jogos" + 1 slide por
+campeonato, até 6 campeonatos (`RODADA_MAX_LIGAS`). Precisa de `API_FOOTBALL_KEY`.
 Gerar manualmente: Ajustes → "Gerar a rodada de hoje agora" (`POST /api/robos/rodada`).
 
 ## Robô de notícias
@@ -99,9 +121,10 @@ referência; buscamos candidatas pelo nome (Wikimedia Commons e, com
 canal, boa para capa). Sem foto conferida: resultado vai para a fila (não sai
 sozinho) e notícia sai sem foto de jogador.
 
-## Arte 100% pela OpenAI (desde 16/10/2026)
+## Arte pela OpenAI (16/10 a 05/11/2026 — desligada)
 
-Decisão do Nog: os templates próprios não criam mais arte. A OpenAI (`gpt-image-2`, `OPENAI_API_KEY`) cria a imagem
+Desligada desde 05/11/2026 (custo). Volta só com `IMAGENS_OPENAI=1`. Como funcionava:
+os templates próprios não criavam arte. A OpenAI (`gpt-image-2`, `OPENAI_API_KEY`) cria a imagem
 inteira, com textos, placar e escudos. O sistema entrega o briefing: o manual `brands/seu-tipster/brand-guidelines.md`
 (cores, identidade, direção de arte, tipo de post), os textos exatos e, como referência, a foto conferida do jogador e os
 escudos (nunca arte de outro veículo).
@@ -112,7 +135,7 @@ escudos (nunca arte de outro veículo).
 - A OpenAI não devolveu imagem → o post não é criado, o robô tenta de novo e chega um push "Arte da OpenAI falhou"
   (no máximo 1 a cada 30 min).
 - `/api/saude` → `imagens_openai`: quem faz a arte, se a chave funciona, imagens do dia e o último erro.
-- Emergência: `IMAGENS_OPENAI=0` no Railway volta aos templates.
+- Religar: `IMAGENS_OPENAI=1` no Railway (o padrão agora é template AO VIVO).
 
 Variáveis: `OPENAI_IMAGE_MODEL` (`gpt-image-2`), `OPENAI_IMAGE_QUALITY` (`high`), `OPENAI_IMAGE_SIZE` (`1088x1360`),
 `OPENAI_IMAGENS_DIA` (trava, 400).
@@ -169,8 +192,8 @@ com erro e pode ser aprovado de novo. Notícia que sai sozinha (nota 8+ de clube
 
 ## Rodada curta (desde 17/10/2026)
 
-Capa + 1 página por campeonato (até 10 jogos, em ordem de horário), sem card individual de pré-jogo; no máximo 4
-campeonatos = 5 páginas (`RODADA_MAX_LIGAS`). A legenda continua citando todos os campeonatos do dia.
+Capa + 1 página por campeonato (até 10 jogos, em ordem de horário), sem card individual de pré-jogo. Desde 05/11/2026
+(arte sem custo) são até 6 campeonatos (`RODADA_MAX_LIGAS`, era 4); campeonato com mais de 10 jogos vira 2 páginas.
 
 ## Rodada em lote + pedido enxuto + revisão só por erro real (desde 17/10/2026)
 

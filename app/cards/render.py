@@ -3,7 +3,13 @@
 Modelos HTML (Jinja2) em app/cards/modelos, renderizados com Chromium headless
 (Playwright). Fotos e escudos são baixados no servidor e embutidos no HTML.
 
-Modelos: noticia · jogador · rodada · resultado
+Direção de arte "AO VIVO" (Nog, 05/11/2026): preto sinal, verde Tipster como
+estrutura (placa diagonal, régua, selo), Anton nas manchetes e placares,
+Barlow Condensed nas placas e nomes, Inter no apoio. Base: modelos/vivo.html.
+
+Formatos: capa_rodada · rodada · noticia · urgente · resultado · resumo · tabela
+(os nomes antigos — destaque, confronto, clube, editorial, jogador, heroi —
+continuam aceitos e saem no visual novo).
 """
 from __future__ import annotations
 
@@ -19,23 +25,29 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from PIL import Image
 
-from . import fotos, recorte
+from . import fotos
 
 AQUI = Path(__file__).resolve().parent
-MODELOS = ("noticia", "jogador", "rodada", "resultado", "heroi", "destaque", "confronto", "clube", "editorial", "arte", "tabela")
+NOVOS = ("capa_rodada", "rodada", "noticia", "urgente", "resultado", "resumo", "tabela")
+# nomes antigos: continuam válidos (pauta do chat, posts que já estão na fila) e saem no visual novo
+ALIAS = {"destaque": "noticia", "confronto": "noticia", "clube": "noticia", "editorial": "noticia",
+         "jogador": "noticia", "heroi": "resultado"}
+MODELOS = NOVOS + tuple(ALIAS) + ("arte",)
 
 # ------------------------------------------------------------------ marcas --
 # Cada perfil posta com a própria identidade. Chave = @ do Instagram.
-MARCAS: dict[str, dict[str, str]] = {
+MARCAS: dict[str, Any] = {
     "seutipster.app": {
-        "nome": "SeuTipster", "cor": "#95FF50", "cor_ink": "#0A0C09",
-        "bg": "#0A0C09", "ink": "#F2F2F2", "mute": "#8C9188", "logo": "seutipster.png",
+        "nome": "SeuTipster", "cor": "#86FF5C", "cor_ink": "#000000",   # verde Tipster (manual AO VIVO)
+        "bg": "#000000", "ink": "#FFFFFF", "mute": "#A3A3A3", "logo": "seutipster.png",
+        "assinatura": ("SEU", "TIPSTER"), "selo": "ST",
     },
 }
 MARCAS["seutipsterapp"] = MARCAS["seutipster.app"]  # @ novo (perfil trocado em 03/11/2026)
 MARCA_PADRAO = {
-    "nome": "DKC", "cor": "#FDD918", "cor_ink": "#0A0A0A",
-    "bg": "#0A0A0A", "ink": "#FAFAFA", "mute": "#8C8C8C", "logo": "",
+    "nome": "DKC", "cor": "#FFD400", "cor_ink": "#000000",
+    "bg": "#000000", "ink": "#FFFFFF", "mute": "#A3A3A3", "logo": "",
+    "assinatura": ("DKC", "SOCIAL"), "selo": "DK",
 }
 
 _env = Environment(loader=FileSystemLoader(AQUI / "modelos"), autoescape=select_autoescape(["html"]))
@@ -50,30 +62,66 @@ def _destaque(txt: Any) -> Markup:
 
 _env.filters["destaque"] = _destaque
 
+
+def _um_destaque(txt: Any) -> Markup:
+    """Manual AO VIVO: UM único trecho em verde. O 1º *trecho* vira destaque; outros asteriscos somem."""
+    s = html.escape(str(txt or "")).strip()
+    # palavra com hífen não quebra no meio da linha ("ex-Barcelona", "Atlético-MG")
+    s = re.sub(r"([^\s*<>]+-[^\s*<>]+)", r'<span class="nb">\1</span>', s)
+    s = re.sub(r"\*(.+?)\*", r"<em>\1</em>", s, count=1).replace("*", "")
+    return Markup(s.replace("\n", "<br>"))
+
+
+def _sem_destaque(txt: Any) -> str:
+    return str(txt or "").replace("*", "").strip()
+
+
+def _hora_br(h: Any) -> str:
+    """"19:30" → "19h30" (como o torcedor escreve)."""
+    s = str(h or "").strip()
+    return s.replace(":", "h") if re.fullmatch(r"\d{1,2}:\d{2}", s) else s
+
+
+def _minutos(txt: Any) -> str:
+    return str(txt or "").replace("'", "’")
+
+
+_env.filters.update(um_destaque=_um_destaque, sem_destaque=_sem_destaque, hora_br=_hora_br, minutos=_minutos)
+
 _fontes_css: str | None = None
 _logos: dict[str, str] = {}
 
+LATIN = ("U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,"
+         "U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD")
+EXT = ("U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,"
+       "U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF")
+
+
+def _woff2(familia: str, arq: str, peso: int, estilo: str, rng: str) -> str:
+    b64 = base64.b64encode((AQUI / "fonts" / arq).read_bytes()).decode()
+    return (f"@font-face{{font-family:{familia};font-weight:{peso};font-style:{estilo};font-display:block;"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2');unicode-range:{rng}}}")
+
 
 def _fontes() -> str:
+    """Inter (apoio, rodapé) · Barlow Condensed (placas, nomes, horários) · Anton (manchete, placar, numeral)."""
     global _fontes_css
     if _fontes_css is None:
         partes = []
         for peso, arq in ((900, "Black"), (800, "ExtraBold"), (700, "Bold"), (600, "SemiBold"), (500, "Medium"), (400, "Regular")):
             b64 = base64.b64encode((AQUI / "fonts" / f"Inter-{arq}.otf").read_bytes()).decode()
-            partes.append(f"@font-face{{font-family:CardInter;font-weight:{peso};src:url(data:font/otf;base64,{b64})}}")
-        LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
-        EXT = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
-        for peso, estilo in ((900, "italic"), (800, "italic"), (700, "normal"), (600, "normal"), (500, "normal")):
+            partes.append(f"@font-face{{font-family:CardInter;font-weight:{peso};font-display:block;"
+                          f"src:url(data:font/otf;base64,{b64})}}")
+        for peso, estilo in ((900, "italic"), (800, "italic"), (800, "normal"), (700, "normal"), (600, "normal"), (500, "normal")):
             for sub, rng in (("latin", LATIN), ("latin-ext", EXT)):
-                arq = AQUI / "fonts" / f"barlow-condensed-{sub}-{peso}-{estilo}.woff2"
-                b64 = base64.b64encode(arq.read_bytes()).decode()
-                partes.append(f"@font-face{{font-family:Barlow;font-weight:{peso};font-style:{estilo};"
-                              f"src:url(data:font/woff2;base64,{b64}) format('woff2');unicode-range:{rng}}}")
+                partes.append(_woff2("Barlow", f"barlow-condensed-{sub}-{peso}-{estilo}.woff2", peso, estilo, rng))
+        for sub, rng in (("latin", LATIN), ("latin-ext", EXT)):
+            partes.append(_woff2("Anton", f"anton-{sub}-400-normal.woff2", 400, "normal", rng))
         _fontes_css = "\n".join(partes)
     return _fontes_css
 
 
-def marca_de(handle: str | None) -> dict[str, str]:
+def marca_de(handle: str | None) -> dict[str, Any]:
     h = (handle or "").lstrip("@").lower()
     m = dict(MARCAS.get(h, MARCA_PADRAO))
     m["handle"] = h or "dkc"
@@ -86,39 +134,38 @@ def marca_de(handle: str | None) -> dict[str, str]:
 
 
 # --------------------------------------------------------------- imagens --
-def cor_dominante(data_uri: str | None) -> str | None:
-    """Cor principal de um escudo (ignora branco, preto e cinza)."""
-    if not data_uri or "," not in data_uri:
-        return None
-    try:
-        im = Image.open(io.BytesIO(base64.b64decode(data_uri.split(",", 1)[1]))).convert("RGBA")
-        im.thumbnail((64, 64))
-        cont: dict[tuple, int] = {}
-        for r, g, b, a in im.getdata():
-            if a < 200:
-                continue
-            mx, mn = max(r, g, b), min(r, g, b)
-            if mx - mn < 40 or mx < 50:  # cinza, branco ou preto
-                continue
-            k = (r // 24 * 24, g // 24 * 24, b // 24 * 24)
-            cont[k] = cont.get(k, 0) + 1
-        if not cont:
-            return None
-        r, g, b = max(cont, key=cont.get)
-        return f"#{r:02x}{g:02x}{b:02x}"
-    except Exception:
-        return None
-
-
-def _escura(hex_: str) -> bool:
-    h = hex_.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return (0.299 * r + 0.587 * g + 0.114 * b) < 150
+def _adaptar(modelo: str, d: dict) -> str:
+    """Nome antigo → formato AO VIVO, e campos antigos → campos novos. Devolve o template a usar."""
+    m = ALIAS.get(modelo, modelo)
+    if m == "noticia":
+        # campos dos cards antigos (tag/tag2/linha_fina) viram kicker/competição/apoio
+        d.setdefault("kicker", d.get("tag") or "Notícia")
+        d.setdefault("competicao", d.get("tag2"))
+        d.setdefault("apoio", d.get("linha_fina"))
+        sinais = (str(d.get("editoria") or ""), str(d.get("tag") or ""), str(d.get("kicker") or ""))
+        if d.get("urgente") or any(s.strip().lower() == "urgente" for s in sinais):
+            m = "urgente"
+    if m in ("noticia", "urgente", "capa_rodada", "resultado"):
+        # retrato oficial (rosto pequeno da API-Football) não aguenta foto sangrando: vai emoldurado
+        if d.get("foto") and d.get("foto_tipo") == "retrato":
+            d["retrato"], d["foto"] = d["foto"], None
+    if m == "resultado":
+        d.setdefault("competicao", " · ".join(x for x in (d.get("tag2"), d.get("fase")) if x) or None)
+    rosto = d.get("rosto")
+    if isinstance(rosto, (list, tuple)) and len(rosto) == 2:
+        try:
+            fx, fy = (float(v) for v in rosto)
+            d["rosto"] = [fx / 100 if fx > 1 else fx, fy / 100 if fy > 1 else fy]
+        except (TypeError, ValueError):
+            d["rosto"] = None
+    else:
+        d["rosto"] = None
+    return m
 
 
 async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
     """Troca URLs por data URIs. Foto principal é obrigatória quando informada;
-    escudos e logos que falharem só somem do card. Devolve avisos."""
+    escudos, retrato e logos que falharem só somem do card. Devolve avisos."""
     avisos: list[str] = []
 
     async def opcional(obj: dict, chave: str, lado: int = 400):
@@ -136,35 +183,17 @@ async def _resolver_imagens(modelo: str, d: dict) -> list[str]:
         tarefas.append(principal())
     for k in ("escudo", "logo_liga", "escudo_casa", "escudo_fora"):
         tarefas.append(opcional(d, k))
+    tarefas.append(opcional(d, "retrato", 400))
     for j in d.get("jogos") or []:
-        tarefas.append(opcional(j, "escudo_casa"))
-        tarefas.append(opcional(j, "escudo_fora"))
+        tarefas.append(opcional(j, "escudo_casa", 160))
+        tarefas.append(opcional(j, "escudo_fora", 160))
     for r in d.get("linhas") or []:
         tarefas.append(opcional(r, "escudo", 120))
     await asyncio.gather(*tarefas)
-    # cor da faixa: a do escudo do protagonista (vencedor/casa), senão a marca
-    if not d.get("cor_faixa"):
-        for k in ("escudo_destaque", "escudo_fora" if d.get("lado_destaque") == "fora" else "escudo_casa", "escudo"):
-            c = cor_dominante(d.get(k)) if d.get(k) else None
-            if c:
-                d["cor_faixa"] = c
-                break
-    if d.get("cor_faixa"):
-        d["faixa_escura"] = _escura(d["cor_faixa"])
-    # confronto: cada lado na cor do seu escudo
-    if modelo == "confronto":
-        d.setdefault("cor_casa", cor_dominante(d.get("escudo_casa")) if d.get("escudo_casa") else None)
-        d.setdefault("cor_fora", cor_dominante(d.get("escudo_fora")) if d.get("escudo_fora") else None)
-    # escudo do protagonista em destaque (formato herói)
-    if modelo == "heroi":
-        d["escudo_destaque_img"] = d.get("escudo_fora") if d.get("lado_destaque") == "fora" else d.get("escudo_casa")
-    # jogador recortado sobre o nosso cenário
-    if d.get("foto") and not d.get("visual_ia") and (modelo in ("heroi", "destaque") or d.get("recortar")):
-        d["recorte"] = await recorte.recortar(d["foto"])
-        if not d["recorte"]:
-            avisos.append("recorte do jogador falhou: foi usada a foto inteira")
-    if not d.get("foto"):
-        avisos.append("card sem foto")
+    if modelo == "arte":  # selo sobre a arte da OpenAI (caminho desligado por padrão)
+        return avisos
+    if not d.get("foto") and modelo in ("noticia", "urgente", "capa_rodada"):
+        avisos.append("card sem foto de jogador" + (" (retrato oficial emoldurado)" if d.get("retrato") else ""))
     return avisos
 
 
@@ -195,12 +224,12 @@ class Renderizador:
         if modelo not in MODELOS:
             raise ValueError(f"modelo desconhecido: {modelo} (use {', '.join(MODELOS)})")
         d = dict(dados)
-        if d.get("jogos"):
-            d["jogos"] = [dict(j) for j in d["jogos"]]
-        if d.get("linhas"):
-            d["linhas"] = [dict(r) for r in d["linhas"]]
-        avisos = await _resolver_imagens(modelo, d)
-        tpl = _env.get_template(f"{modelo}.html")
+        for k in ("jogos", "linhas", "ligas"):
+            if d.get(k):
+                d[k] = [dict(x) for x in d[k]]
+        tpl_nome = _adaptar(modelo, d)
+        avisos = await _resolver_imagens(tpl_nome, d)
+        tpl = _env.get_template(f"{tpl_nome}.html")
         return tpl.render(d=d, marca=marca_de(handle), fonte=fonte or d.get("fonte", ""), fontes=Markup(_fontes())), avisos
 
     async def png(self, modelo: str, dados: dict, handle: str | None, fonte: str = "") -> tuple[bytes, list[str]]:

@@ -1,0 +1,47 @@
+{% extends "vivo.html" %}
+{% import "_vivo.html" as v %}
+{#- Notícia · urgente (manual AO VIVO, noticia-urgente.html). Só notícia-bomba de clube grande.
+    Vermelho só aqui: régua de topo, faixa hachurada, régua da manchete e barra da fonte.
+    dados: competicao, titulo (com UM *trecho* em verde), hora ("14h32", quando a notícia saiu),
+           foto/rosto/credito_foto | retrato | escudo | escudo_casa+escudo_fora, palavra
+    fonte: veículo citado -#}
+{% set fant = [(1500 / ((d.palavra or 'xxxxx')|length))|int, 400]|min %}
+{% block cor_topo %}#FF3B30{% endblock %}
+{% block estilo %}
+.faixa{flex:none;height:76px;background-color:#000;background-image:repeating-linear-gradient(135deg,#FF3B30 0 7px,#000 7px 20px);
+  display:flex;align-items:center;padding-left:56px}
+.faixa .sinal{background:#FF3B30;padding:10px 22px 9px;display:flex;align-items:center;gap:12px}
+.faixa .sinal i{width:14px;height:14px;border-radius:50%;background:#fff}
+.faixa .sinal b{font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:28px;letter-spacing:3.4px;line-height:1.08}
+.zona{height:640px}
+.zona .grad{height:400px;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.92) 56%,#000 100%)}
+.zona .st{position:absolute;right:56px;top:36px;z-index:3}
+.zona .comp{position:absolute;left:56px;bottom:34px;z-index:3;max-width:968px}
+.zona .credito{top:112px}
+.texto{position:relative;z-index:2;flex:1;min-height:0;padding:24px 56px 30px;display:flex;flex-direction:column;gap:20px}
+.texto .regua-urg{flex:none;height:5px;background:#FF3B30}
+.texto .manchete{font-size:96px}
+.fonte{margin-top:auto;flex:none;display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:2px solid #1F1F1F;padding-top:16px}
+.fonte .esq{display:flex;align-items:center;gap:12px;min-width:0}
+.fonte .esq i{flex:none;width:7px;height:26px;background:#FF3B30}
+.fonte .esq span{font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:21px;letter-spacing:2px;color:#A3A3A3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+.fonte .cta{flex:none;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:21px;letter-spacing:2.2px;white-space:nowrap}
+{% endblock %}
+{% block corpo %}
+<div class="faixa"><div class="sinal"><i></i><b>URGENTE</b></div></div>
+<div class="zona">
+  {{ v.foto(d, ay=0.36, topo=110, base=170, esc=240, esc2=210, ret=280, fantasma=d.palavra, fant=fant) }}
+  <div class="grad"></div>
+  <div class="st">{{ v.selo(marca) }}</div>
+  {% if d.competicao %}<div class="comp placa vazada vidro"><b>{{ d.competicao }}</b></div>{% endif %}
+</div>
+<div class="texto" data-caixa>
+  <div class="regua-urg"></div>
+  <h1 class="manchete" data-max="{{ d.tamanho or 96 }}" data-min="62" data-linhas="4">{{ d.titulo|um_destaque }}</h1>
+  <div class="fonte">
+    <div class="esq">{% if fonte or d.hora %}<i></i><span>{% if fonte %}Fonte: {{ fonte }}{% endif %}{% if fonte and d.hora %} &middot; {% endif %}{{ d.hora|hora_br }}</span>{% endif %}</div>
+    <div class="cta">COMPARTILHA &rarr;</div>
+  </div>
+</div>
+{% endblock %}

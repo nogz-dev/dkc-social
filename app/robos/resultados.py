@@ -201,10 +201,10 @@ def montar(j: dict, gs: list[dict], handle: str = "seutipster.app") -> dict:
     gols_casa = _agrupar([g for g in gs if (g["time_id"] == th["id"]) != ("Own" in g["tipo"])])
     gols_fora = _agrupar([g for g in gs if (g["time_id"] == ta["id"]) != ("Own" in g["tipo"])])
 
-    vid = ((j.get("fixture") or {}).get("venue") or {}).get("id")
     dados = {
+        # foto: só a do destaque do jogo, conferida (main.foto_do_jogo). Estádio vazio nunca entra (manual AO VIVO).
         "lado_destaque": "fora" if venc_id == ta["id"] else "casa",
-        "foto": f"{rodada.MEDIA}/football/venues/{vid}.png" if vid else None,
+        "competicao": " · ".join(x for x in (liga["curto"], fase) if x),
         "tag": "Fim de jogo", "tag2": liga["curto"],
         "casa": casa, "fora": fora, "gols_casa": gc, "gols_fora": gf,
         "escudo_casa": th.get("logo"), "escudo_fora": ta.get("logo"),

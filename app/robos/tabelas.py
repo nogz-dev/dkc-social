@@ -19,13 +19,14 @@ from . import rodada
 from . import resultados as res
 
 TABELAS = {
-    71: {"nome": "Brasileirão Série A", "curto": "Brasileirão", "tag": "#Brasileirao"},
-    2: {"nome": "Champions League", "curto": "Champions", "tag": "#ChampionsLeague"},
-    140: {"nome": "LaLiga", "curto": "LaLiga", "tag": "#LaLiga"},
-    39: {"nome": "Premier League", "curto": "Premier", "tag": "#PremierLeague"},
+    71: {"nome": "Brasileirão Série A", "curto": "Brasileirão", "tag": "#Brasileirao", "zona_alta": "Libertadores"},
+    2: {"nome": "Champions League", "curto": "Champions", "tag": "#ChampionsLeague", "zona_alta": "Oitavas direto"},
+    140: {"nome": "LaLiga", "curto": "LaLiga", "tag": "#LaLiga", "zona_alta": "Champions"},
+    39: {"nome": "Premier League", "curto": "Premier", "tag": "#PremierLeague", "zona_alta": "Champions"},
 }
 FORA = {"PST", "CANC", "ABD", "AWD", "WO", "SUSP"}   # não seguram a rodada
 POR_SLIDE = 10
+POR_SLIDE_RESUMO = 6   # manual AO VIVO: até 6 confrontos por slide no "Resultados do dia"
 
 
 def _rodada_valida(lid: int, round_: str) -> bool:
@@ -72,6 +73,20 @@ def _num_rodada(round_: str) -> str:
     return m.group(1) if m else ""
 
 
+def zona(lid: int, descricao: str | None) -> str | None:
+    """Faixa da tabela pela descrição da API-Football: "alta" (vaga principal) ou "baixa" (rebaixamento)."""
+    d = (descricao or "").lower()
+    if "relegation" in d:
+        return "baixa"
+    if lid == 71 and "libertadores" in d:
+        return "alta"
+    if lid in (39, 140) and "champions league" in d:
+        return "alta"
+    if lid == 2 and ("round of 16" in d or "1/8" in d):
+        return "alta"
+    return None
+
+
 def montar_tabela(lid: int, round_: str, linhas: list[dict], handle: str = "seutipster.app") -> dict | None:
     if not linhas:
         return None
@@ -80,20 +95,23 @@ def montar_tabela(lid: int, round_: str, linhas: list[dict], handle: str = "seut
     partes = [linhas[i:i + POR_SLIDE] for i in range(0, len(linhas), POR_SLIDE)]
     slides = []
     for k, parte in enumerate(partes, 1):
+        rows = [{
+            "pos": str(r.get("rank")),
+            "time": rodada.nome((r.get("team") or {}).get("name", "")),
+            "escudo": (r.get("team") or {}).get("logo"),
+            "pts": str(r.get("points")),
+            "j": str((r.get("all") or {}).get("played", "")),
+            "v": str((r.get("all") or {}).get("win", "")),
+            "sg": (f"+{r.get('goalsDiff')}" if (r.get("goalsDiff") or 0) > 0 else str(r.get("goalsDiff"))),
+            "zona": zona(lid, r.get("description")),
+        } for r in parte]
+        zonas = {r["zona"] for r in rows}
+        legenda = ([{"zona": "alta", "txt": info["zona_alta"]}] if "alta" in zonas else []) + \
+                  ([{"zona": "baixa", "txt": "Rebaixamento"}] if "baixa" in zonas else [])
         slides.append({"modelo": "tabela", "dados": {
-            "tag": "Classificação", "tag2": info["curto"],
-            "titulo": f"*{info['nome']}*" + (f" · após a {n}ª rodada" if n else ""),
-            "meta": {"liga": lid, "temporada": None, "times": [(parte[0].get("team") or {}).get("id")]} if k == 1 else None,
+            "liga": info["nome"], "fase": f"Após a {n}ª rodada" if n else "",
             "parte": f"{k}/{len(partes)}" if len(partes) > 1 else "",
-            "linhas": [{
-                "pos": str(r.get("rank")),
-                "time": rodada.nome((r.get("team") or {}).get("name", "")),
-                "escudo": (r.get("team") or {}).get("logo"),
-                "pts": str(r.get("points")),
-                "j": str((r.get("all") or {}).get("played", "")),
-                "v": str((r.get("all") or {}).get("win", "")),
-                "sg": (f"+{r.get('goalsDiff')}" if (r.get("goalsDiff") or 0) > 0 else str(r.get("goalsDiff"))),
-            } for r in parte],
+            "linhas": rows, "legenda": legenda,
         }})
     lider, vice = linhas[0], (linhas[1] if len(linhas) > 1 else None)
     nl = rodada.nome(lider["team"]["name"])
@@ -130,27 +148,25 @@ def montar_resumo(jogos: list[dict], dia: date, handle: str = "seutipster.app") 
     for j in fim:
         por_liga.setdefault(j["league"]["id"], []).append(j)
     data_curta = f"{rodada.DIAS[dia.weekday()]} {dia.day:02d}/{dia.month:02d}"
-    slides = []
-    for lid, lista in por_liga.items():
-        n_partes = -(-len(lista) // 8)
-        tam = -(-len(lista) // n_partes)
-        for k in range(0, len(lista), tam):
-            parte = lista[k:k + tam]
-            if len(slides) >= 10:
-                break
-            slides.append({"modelo": "rodada", "dados": {
-                "tag": "Resultados do dia", "tag2": data_curta,
-                "titulo": f"*{rodada.IDS[lid]['nome']}*",
-                "logo_liga": parte[0]["league"].get("logo"),
-                "jogos": [{
-                    "hora": rodada.hora(j["fixture"]["date"]),
-                    "casa": rodada.nome(j["teams"]["home"]["name"]), "fora": rodada.nome(j["teams"]["away"]["name"]),
-                    "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
-                    "gols_casa": j["goals"]["home"], "gols_fora": j["goals"]["away"],
-                    "penaltis": (f"{j['score']['penalty']['home']}-{j['score']['penalty']['away']} nos pênaltis"
-                                 if (j.get("score") or {}).get("penalty", {}).get("home") is not None else ""),
-                } for j in parte],
-            }})
+    # até 6 por slide, divididos por igual (8 jogos = 4 + 4, não 6 + 2); no máximo 10 slides
+    fim = fim[:POR_SLIDE_RESUMO * 10]
+    n_partes = -(-len(fim) // POR_SLIDE_RESUMO)
+    tam = -(-len(fim) // n_partes)
+    blocos = [fim[i:i + tam] for i in range(0, len(fim), tam)]
+
+    def pen(j: dict) -> str:
+        p = (j.get("score") or {}).get("penalty") or {}
+        return f"Pên {p['home']}-{p['away']}" if p.get("home") is not None else ""
+
+    slides = [{"modelo": "resumo", "dados": {
+        "data": rodada.data_placa(dia), "parte": f"{k}/{len(blocos)}" if len(blocos) > 1 else "",
+        "jogos": [{
+            "liga": rodada.IDS[j["league"]["id"]]["curto"],
+            "casa": rodada.nome(j["teams"]["home"]["name"]), "fora": rodada.nome(j["teams"]["away"]["name"]),
+            "escudo_casa": j["teams"]["home"].get("logo"), "escudo_fora": j["teams"]["away"].get("logo"),
+            "gols_casa": j["goals"]["home"], "gols_fora": j["goals"]["away"], "penaltis": pen(j),
+        } for j in bloco],
+    }} for k, bloco in enumerate(blocos, 1)]
     linhas = []
     for lid, lista in por_liga.items():
         placares = "; ".join(f"{rodada.nome(j['teams']['home']['name'])} {j['goals']['home']}x{j['goals']['away']} "

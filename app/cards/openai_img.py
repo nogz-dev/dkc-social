@@ -1,6 +1,10 @@
-"""Arte dos cards feita 100% pela OpenAI (gpt-image-2).
+"""Arte dos cards pela OpenAI (gpt-image-2) — DESLIGADA por padrão desde 05/11/2026.
 
-Decisão do Nog (16/10/2026): os templates próprios deixam de criar arte. A OpenAI
+Decisão do Nog (05/11/2026): a OpenAI saiu ("fica muito caro"); a arte volta a ser
+dos templates próprios no visual AO VIVO (app/cards/modelos, custo zero por imagem).
+Este módulo só roda com IMAGENS_OPENAI=1 no Railway.
+
+Como funcionava (16/10/2026): os templates próprios deixavam de criar arte. A OpenAI
 cria a imagem inteira (visual + textos + placar + escudos). Nós só:
 1. entregamos o briefing: manual da marca (brands/<marca>/brand-guidelines.md),
    textos exatos, placar, e como referência a foto conferida do jogador e os
@@ -11,7 +15,6 @@ cria a imagem inteira (visual + textos + placar + escudos). Nós só:
 3. aplicamos o logotipo oficial no rodapé (o manual proíbe redesenhar o logo).
 
 Se a OpenAI não devolver imagem, o post não é criado (o robô tenta de novo).
-IMAGENS_OPENAI=0 é só a chave de emergência que volta aos templates.
 """
 from __future__ import annotations
 
@@ -59,12 +62,12 @@ def chave() -> str:
 
 
 def desligado() -> bool:
-    """Chave de emergência: IMAGENS_OPENAI=0 volta aos templates próprios."""
-    return os.getenv("IMAGENS_OPENAI", "1") == "0"
+    """Padrão (05/11/2026): templates próprios AO VIVO. A OpenAI só volta com IMAGENS_OPENAI=1."""
+    return os.getenv("IMAGENS_OPENAI", "0") != "1"
 
 
 def status() -> dict:
-    return {"responsavel_pela_arte": "templates (emergência)" if desligado() else "OpenAI",
+    return {"responsavel_pela_arte": "templates AO VIVO (sem custo)" if desligado() else "OpenAI",
             "chave_configurada": bool(chave()), "modelo": MODELO,
             "hoje": _uso["n"] if _uso["dia"] == date.today() else 0, "limite_dia": LIMITE_DIA,
             "reserva_robos": f"{int(RESERVA_AUTO * 100)}%", "ultimo_erro": _uso["ultimo_erro"],

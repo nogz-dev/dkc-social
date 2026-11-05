@@ -1,9 +1,11 @@
 """Robô da Rodada do dia.
 
 Todo dia de manhã busca os jogos das ligas prioritárias na API-Football e
-monta um carrossel: capa + 1 slide por liga (até 8 jogos por slide, até 10
-slides). Foto do tema: o estádio do jogo principal de cada liga (imagem de
-estádio da própria API-Football). Legenda montada por regra, sem IA.
+monta um carrossel no visual AO VIVO (manual de 05/11/2026): capa com
+"Quinta de 14 jogos" + lista de campeonatos, e 1 slide por campeonato com os
+jogos em linha (horário, times e escudos). Foto da capa: o artilheiro de um
+dos times do jogo em destaque (foto conferida); sem foto, os escudos do jogo.
+Estádio vazio nunca entra. Legenda montada por regra, sem IA.
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ def chave() -> str:
 # Ordem = prioridade (a primeira liga com jogo vira o destaque da capa)
 LIGAS: list[dict[str, Any]] = [
     {"id": 13,  "nome": "Libertadores",       "curto": "Libertadores"},
-    {"id": 71,  "nome": "Brasileirão",        "curto": "Brasileirão"},
+    {"id": 71,  "nome": "Brasileirão Série A", "curto": "Brasileirão"},
     {"id": 73,  "nome": "Copa do Brasil",     "curto": "Copa do Brasil"},
     {"id": 11,  "nome": "Sul-Americana",      "curto": "Sul-Americana"},
     {"id": 2,   "nome": "Champions League",   "curto": "Champions"},
@@ -57,6 +59,23 @@ NOMES = {
 DIAS = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]
 DIAS_LONGO = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
+MESES_CURTO = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
+
+
+def data_placa(dia: date) -> str:
+    """Data da placa do manual: "QUI 05 NOV"."""
+    return f"{DIAS[dia.weekday()]} {dia.day:02d} {MESES_CURTO[dia.month - 1]}"
+
+
+def fase_placa(round_: str) -> str:
+    """"Regular Season - 32" → "Rodada 32"; mata-mata → "Oitavas de final"; sem fase → ""."""
+    f = fase(round_)
+    m = re.match(r"(\d+)ª rodada", f)
+    return f"Rodada {m.group(1)}" if m else f.capitalize()
+
+
+def _jogos_txt(n: int) -> str:
+    return f"{n} jogo{'s' if n != 1 else ''}"
 
 
 def nome(n: str) -> str:
@@ -85,11 +104,6 @@ def fase(round_: str) -> str:
 def hora(iso: str) -> str:
     d = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(TZ)
     return f"{d.hour:02d}:{d.minute:02d}"
-
-
-def _foto_estadio(jogo: dict) -> str | None:
-    vid = ((jogo.get("fixture") or {}).get("venue") or {}).get("id")
-    return f"{MEDIA}/football/venues/{vid}.png" if vid else None
 
 
 async def jogos_do_dia(dia: date) -> list[dict]:
@@ -127,35 +141,40 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
     for j in jogos:
         por_liga.setdefault(j["league"]["id"], []).append(j)
     ligas = sorted(por_liga, key=lambda i: ORDEM[i])
+    # um slide por campeonato (os de mais de 10 jogos viram 2 páginas); carrossel de no máximo 10 imagens.
+    # A arte agora é template próprio (custo zero): o teto voltou de 4 para 6 campeonatos.
+    paginas: list[tuple[int, list[dict], str]] = []
+    for lid in ligas[:int(os.getenv("RODADA_MAX_LIGAS", "6"))]:
+        lista = por_liga[lid]
+        n_pag = -(-len(lista) // 10)
+        tam = -(-len(lista) // n_pag)
+        for k in range(n_pag):
+            if len(paginas) >= 9:
+                break
+            paginas.append((lid, lista[k * tam:(k + 1) * tam], f"{k + 1}/{n_pag}" if n_pag > 1 else ""))
+    incluidas = list(dict.fromkeys(lid for lid, _, _ in paginas))
+    no_carrossel = [j for lid, lista, _ in paginas for j in lista]
+    total = len(no_carrossel)
 
     destaque = por_liga[ligas[0]][0]
     casa_d, fora_d = nome(destaque["teams"]["home"]["name"]), nome(destaque["teams"]["away"]["name"])
-    total = len(jogos)
-    primeiro = min(hora(j["fixture"]["date"]) for j in jogos)
     data_curta = f"{DIAS[dia.weekday()]} {dia.day:02d}/{dia.month:02d}"
-    data_longa = f"{DIAS_LONGO[dia.weekday()]}, {dia.day} de {MESES[dia.month - 1]}"
+    placa = data_placa(dia)
 
-    resto = total - 1
-    titulo = (f"Hoje tem *{casa_d} x {fora_d}* e mais {resto} jogo{'s' if resto != 1 else ''}"
-              if resto else f"Hoje tem *{casa_d} x {fora_d}*")
-    fatos = [{"n": str(len(por_liga[i])), "l": IDS[i]["curto"]} for i in ligas[:3]]
-    fatos.append({"n": primeiro.replace(":", "H"), "l": "primeiro jogo"})
-    slides = [{"modelo": "noticia", "dados": {
-        "foto": _foto_estadio(destaque), "foco": "center 45%",
-        "tag": "Rodada do dia", "tag2": data_curta,
-        "titulo": titulo, "fatos": fatos, "arrasta": len(ligas) > 0,
+    slides = [{"modelo": "capa_rodada", "dados": {
+        "data": placa, "chamada": f"{DIAS_LONGO[dia.weekday()]} de", "destaque": _jogos_txt(total), "total": total,
+        "ligas": [{"nome": IDS[lid]["nome"],
+                   "qtd": _jogos_txt(sum(len(l) for i, l, _ in paginas if i == lid)),
+                   "hora": min(hora(j["fixture"]["date"]) for i, l, _ in paginas if i == lid for j in l)}
+                  for lid in incluidas],
+        # sem foto conferida do jogador, a capa mostra os escudos do jogo em destaque
+        "escudo_casa": destaque["teams"]["home"].get("logo"), "escudo_fora": destaque["teams"]["away"].get("logo"),
         "meta": _meta(destaque),
     }}]
-
-    # Rodada curta (pedido do Nog, 17/10/2026, para economizar): capa + 1 página por campeonato,
-    # sem card individual de pré-jogo; no máximo 4 campeonatos (5 páginas) e 10 jogos por página.
-    for lid in ligas[:int(os.getenv("RODADA_MAX_LIGAS", "4"))]:
-        lista = por_liga[lid][:10]
-        fs = fase(lista[0]["league"].get("round", ""))
+    for lid, lista, parte in paginas:
         slides.append({"modelo": "rodada", "dados": {
-            "foto": _foto_estadio(lista[0]), "tag": IDS[lid]["curto"],
-            "titulo": f"*{IDS[lid]['nome']}*" + (f" · {fs}" if fs else ""),
-            "data": data_longa, "logo_liga": lista[0]["league"].get("logo"),
+            "fase": fase_placa(lista[0]["league"].get("round", "")) or "Hoje",
+            "data": placa, "liga": IDS[lid]["nome"], "parte": parte,
             "jogos": [{
                 "hora": hora(j["fixture"]["date"]),
                 "casa": nome(j["teams"]["home"]["name"]), "fora": nome(j["teams"]["away"]["name"]),
@@ -165,8 +184,8 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
 
     # legenda (regras da skill: gancho nos 125 primeiros caracteres, 3 a 5 hashtags, número concreto)
     linhas = []
-    for lid in ligas:
-        lista = por_liga[lid]
+    for lid in incluidas:
+        lista = [j for j in no_carrossel if j["league"]["id"] == lid]
         tops = ", ".join(f"{nome(j['teams']['home']['name'])} x {nome(j['teams']['away']['name'])} ({hora(j['fixture']['date']).replace(':00', 'h').replace(':', 'h')})"
                          for j in lista[:2])
         extra = f" e mais {len(lista) - 2}" if len(lista) > 2 else ""
@@ -180,7 +199,7 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
     )
     # sai às 9h, ou 1h antes do primeiro jogo se ele for cedo (nunca antes das 7h, início da janela de publicação)
     from datetime import timedelta
-    primeiro_dt = min(datetime.fromisoformat(j["fixture"]["date"].replace("Z", "+00:00")).astimezone(TZ) for j in jogos)
+    primeiro_dt = min(datetime.fromisoformat(j["fixture"]["date"].replace("Z", "+00:00")).astimezone(TZ) for j in no_carrossel)
     sug = max(datetime(dia.year, dia.month, dia.day, 7, 0, tzinfo=TZ),
               min(datetime(dia.year, dia.month, dia.day, 9, 0, tzinfo=TZ), primeiro_dt - timedelta(hours=1)))
     return {
@@ -188,6 +207,6 @@ def montar(jogos: list[dict], dia: date, handle: str = "seutipster.app") -> dict
         "titulo": f"Rodada do dia · {data_curta} · {total} jogos",
         "legenda": legenda, "fonte": "API-Football",
         "sugerido_para": sug.isoformat(),
-        "foto_opcional": True,  # foto de estádio que não vier (ou vier genérica) não derruba o carrossel
+        "foto_opcional": True,  # foto do jogador que não baixar não derruba o carrossel (a capa sai com os escudos)
         "slides": slides,
     }

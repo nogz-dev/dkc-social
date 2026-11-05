@@ -190,6 +190,7 @@ Responda SOMENTE com JSON:
  "boa_para_capa": true|false,       // jogador em destaque, nítido, rosto visível, cabe num recorte vertical 4:5
  "camisa_do_clube": true|false|null, // está com a camisa do clube informado? (null se não houver clube ou não der para ver)
  "corpo_inteiro_ou_busto": true|false, // aparece pelo menos da cintura para cima (bom para recortar)
+ "rosto": [x, y] | null,            // centro do rosto do jogador procurado, em % da largura e da altura da candidata (ex.: [48, 27])
  "motivo": "até 15 palavras"}}
 Seja rigoroso: qualquer texto ou grafismo editado por cima da foto = foto_limpa false."""
 
@@ -223,6 +224,16 @@ async def checar(cand_bytes: bytes, nome: str, clube: str | None, ref_bytes: byt
     return {"ok": ok, **v}
 
 
+def _rosto(r: Any) -> list[float] | None:
+    """[x, y] em fração (0–1) do centro do rosto; o card usa para deixar o rosto na metade de cima."""
+    try:
+        x, y = (float(v) for v in r)
+    except (TypeError, ValueError):
+        return None
+    x, y = (x / 100 if x > 1 else x), (y / 100 if y > 1 else y)
+    return [round(x, 3), round(y, 3)] if 0 <= x <= 1 and 0 <= y <= 1 else None
+
+
 # ------------------------------------------------------------ principal --
 # diagnóstico (aparece em /api/saude) e cache de 24h por jogador
 STATS: dict = {"buscas": 0, "foto": 0, "retrato": 0, "nada": 0, "ultimas": []}
@@ -245,7 +256,7 @@ def _nao_e_placeholder(dados: bytes) -> bool:
 
 
 async def foto_verificada(nome: str | None, clube: str | None = None, jogador_id: int | None = None) -> dict | None:
-    """Foto do jogador: {"url", "credito", "nome", "tipo": "foto"|"retrato", "aviso"} ou None.
+    """Foto do jogador: {"url", "credito", "nome", "tipo": "foto"|"retrato", "aviso", "rosto"} ou None.
     1º foto conferida (Wikidata/Wikimedia/web + checagem por IA); 2º retrato oficial da API-Football
     (rosto, confirmado pelo ID do jogador)."""
     import time
@@ -292,7 +303,8 @@ async def _foto_verificada(nome: str | None, clube: str | None, jogador_id: int 
         log.info("[FOTO] %s · %s · %s", nome_busca, cnd["origem"], v)
         if not v.get("ok"):
             continue
-        achada = {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca, "aviso": None, "tipo": "foto"}
+        achada = {"url": cnd["url"], "credito": cnd["credito"], "nome": nome_busca, "aviso": None, "tipo": "foto",
+                  "rosto": _rosto(v.get("rosto"))}
         if not clube or v.get("camisa_do_clube") is not False:
             return achada
         if not reserva:

@@ -325,18 +325,17 @@ Nunca invente número, data, valor, declaração ou nome. Se a fonte trata como 
 
 Devolva SOMENTE um objeto JSON:
 {
- "tag": rótulo curto em caixa normal (ex.: "Mercado da bola", "Urgente", "Lesão", "Demitido", "Polêmica", "Recorde", "Bastidores"; se for rumor/negociação não confirmada use "Rumor"),
- "tag2": competição ou liga (ex.: "Brasileirão", "LaLiga", "Premier") ou null,
- "titulo_card": manchete do card, até 70 caracteres, forte e factual; marque 1 a 3 palavras-chave entre *asteriscos* para destaque,
- "linha_fina": complemento opcional até 80 caracteres ou null (use só se não houver fatos numéricos),
- "fatos": de 0 a 4 itens {"n": número/valor curto (até 7 caracteres), "l": rótulo até 22 caracteres} TIRADOS DAS FONTES; se não houver números concretos, devolva [],
+ "tag": editoria do card em 1 ou 2 palavras (ex.: "Mercado", "Bastidores", "Lesão", "Demitido", "Polêmica", "Recorde", "Seleção", "Apostas"; se for rumor/negociação não confirmada use "Rumor"),
+ "tag2": competição por extenso (ex.: "Brasileirão Série A", "Premier League", "LaLiga", "Champions League", "Libertadores") ou null,
+ "titulo_card": manchete do card com NO MÁXIMO 8 palavras: sujeito e verbo logo no começo, voz ativa, factual, sem adjetivo de enchimento (ex.: "Real Madrid *demite Xabi Alonso* após derrota"). Marque UM ÚNICO trecho de 1 a 3 palavras entre *asteriscos*: é a parte que vai em verde (nunca dois trechos),
+ "linha_fina": linha de apoio OBRIGATÓRIA: 1 frase de até 110 caracteres que completa a manchete com o dado mais forte da fonte (valor, prazo, placar, quem confirmou), sem repetir a manchete,
  "legenda": a legenda completa (regras abaixo),
  "pessoa_foto": nome completo do jogador/técnico protagonista para buscar foto, ou null,
  "clube_foto": clube atual dessa pessoa, ou null,
  "clube": clube protagonista da notícia (nome curto, ex.: "Flamengo", "Real Madrid"), ou null,
  "jogo": se a notícia é sobre UM jogo específico: {"casa": time mandante, "fora": time visitante, "quando": ex. "Hoje · 21h30" (só se a fonte disser)}; senão null,
  "editoria": "apostas" (regulação/mercado de apostas) | "mercado" (transferências) | "jogo" | "lesao" | "tecnico" | "selecao" | "polemica" | "outro",
- "palavra": UMA palavra curta (até 10 letras, sem acento se possível) para o grafismo gigante do card: sobrenome do protagonista, nome do clube ou o tema (ex.: "BETS", "MERCADO"); ou null,
+ "palavra": UMA palavra curta (até 8 letras) para o grafismo de fundo quando não houver foto: sigla/apelido do clube ou o tema (ex.: "SPFC", "CITY", "BETS"); ou null,
  "fonte_nome": nome do veículo que deu a informação principal,
  "urgente": true só se for bomba de nota 9–10
 }

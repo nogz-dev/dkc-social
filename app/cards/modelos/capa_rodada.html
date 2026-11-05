@@ -1,0 +1,54 @@
+{% extends "vivo.html" %}
+{% import "_vivo.html" as v %}
+{#- Rodada do dia · capa do carrossel (manual AO VIVO, rodada-capa.html).
+    dados: data ("QUI 05 NOV"), chamada ("Quinta de"), destaque ("14 jogos"), total (14),
+           ligas [{nome, qtd ("5 jogos"), hora ("19h30")}], foto/rosto/credito_foto ou retrato,
+           escudo_casa/escudo_fora (jogo em destaque, quando não há foto) -#}
+{% set ligas = (d.ligas or [])[:6] %}
+{% set pad = 15 if ligas|length <= 5 else 9 %}
+{% block estilo %}
+.zona{height:600px}
+.zona .grad{height:320px;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.86) 62%,#000 100%)}
+.cab{position:absolute;left:56px;right:56px;top:44px;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+.conteudo{position:relative;z-index:2;flex:1;min-height:0;padding:0 56px 34px;display:flex;flex-direction:column;gap:24px}
+.conteudo .manchete{margin-top:-56px;font-size:92px}
+.ligas{display:flex;flex-direction:column}
+.liga{display:flex;align-items:center;gap:18px;padding:{{ pad }}px 0;border-bottom:2px solid #1F1F1F}
+.liga:last-child{border-bottom:0}
+.liga .barra{height:34px}
+.liga .n{flex:1;min-width:0;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:34px;letter-spacing:1.2px;line-height:1.1;
+  text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.liga .q{flex:none;font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:26px;letter-spacing:1px;color:#A3A3A3;white-space:nowrap}
+.liga .h{flex:none;width:150px;text-align:right;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:30px;white-space:nowrap}
+.arrasta{margin-top:auto;display:flex;align-items:center;gap:14px}
+.arrasta .hachura{height:34px;flex:1;opacity:.55}
+.arrasta b{flex:none;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:24px;letter-spacing:2.4px;color:var(--verde)}
+{% endblock %}
+{% block corpo %}
+<div class="zona">
+  {{ v.foto(d, ay=0.36, topo=120, base=210, esc2=210, ret=280, fantasma=(d.total or '') ~ '', fant=360) }}
+  <div class="grad"></div>
+  <div class="cab">
+    <div class="placas">
+      <div class="placa"><b>Rodada do dia</b></div>
+      {% if d.data %}<div class="placa vazada"><b>{{ d.data }}</b></div>{% endif %}
+    </div>
+    {{ v.selo(marca) }}
+  </div>
+</div>
+<div class="conteudo">
+  <h1 class="manchete">{{ d.chamada or 'Hoje tem' }}<br><em>{{ d.destaque }}</em></h1>
+  <div class="regua"></div>
+  <div class="ligas">
+  {% for l in ligas %}
+    <div class="liga">
+      <i class="barra"></i>
+      <div class="n um" data-min="26">{{ l.nome }}</div>
+      <div class="q">{{ l.qtd }}</div>
+      <div class="h">{{ l.hora|hora_br }}</div>
+    </div>
+  {% endfor %}
+  </div>
+  <div class="arrasta"><div class="hachura"></div><b>ARRASTA PRO LADO &rarr;</b></div>
+</div>
+{% endblock %}

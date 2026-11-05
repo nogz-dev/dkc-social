@@ -1,24 +1,63 @@
-{% extends "base.html" %}
-{# Tabela de classificação (template de emergência: a arte normal é da OpenAI). #}
+{% extends "vivo.html" %}
+{% import "_vivo.html" as v %}
+{#- Tabela de classificação no visual AO VIVO (mesmo cabeçalho da rodada).
+    dados: liga ("Brasileirão Série A"), fase ("Após a 32ª rodada"), parte ("1/2"),
+           linhas [{pos, time, escudo, pts, j, v, sg, zona: "alta"|"baixa"|None}] — até 10 por slide,
+           legenda [{zona: "alta"|"baixa", txt}] -#}
+{% set linhas = (d.linhas or [])[:10] %}
+{% set liga = d.liga or (d.titulo|sem_destaque).split(' · ')[0] %}
 {% block estilo %}
-.fundo{position:absolute;inset:0;background:radial-gradient(110% 70% at 80% 0%, color-mix(in srgb,var(--cor) 22%,#000) 0%, #050505 65%)}
-.manchete{position:absolute;left:52px;right:52px;top:150px;max-height:200px;z-index:5}
-.tab{position:absolute;left:44px;right:44px;top:330px;z-index:5;border-collapse:collapse;width:calc(100% - 88px);font-size:30px}
-.tab th{font-weight:700;font-size:22px;opacity:.7;text-align:center;padding:0 8px 10px}
-.tab th.t{text-align:left}
-.tab td{padding:13px 8px;border-top:1px solid rgba(255,255,255,.12);text-align:center;font-weight:600}
-.tab td.p{font-weight:900;font-style:italic;width:60px}
-.tab td.t{text-align:left;font-weight:700;display:flex;align-items:center;gap:14px}
-.tab td.t img{width:38px;height:38px;object-fit:contain}
-.tab td.pts{font-weight:900;color:var(--cor)}
-.parte{position:absolute;right:56px;top:66px;z-index:7;font-weight:700;font-size:24px;opacity:.7}
+.cab{position:relative;flex:none;height:232px;background:#111;overflow:hidden;padding:44px 56px 0}
+.cab .hachura{position:absolute;right:-90px;top:-60px;width:440px;height:360px;transform:skewX(-10deg);opacity:.35}
+.cab .in{position:relative;display:flex;flex-direction:column;gap:16px}
+.cab .placa>b{font-size:23px;letter-spacing:2.8px}
+.cab h1{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:78px;line-height:1;letter-spacing:.6px;
+  text-transform:uppercase;white-space:nowrap;padding-top:.1em;margin-top:-.04em;max-width:968px}
+.tab{flex:1;min-height:0;padding:22px 56px 24px;display:flex;flex-direction:column}
+.lin{display:flex;align-items:center;gap:16px}
+.lin .p{width:52px;flex:none;text-align:right;font-family:Anton,Impact,sans-serif;font-size:34px;line-height:1}
+.lin .z{width:6px;height:44px;flex:none;background:transparent}
+.lin .z.alta{background:var(--verde)}
+.lin .z.baixa{background:#5A5A5A}
+.lin .esc{flex:none;object-fit:contain}
+.lin .esc.vazio{display:block;border:2px dashed #3E3E3E;border-radius:50%}
+.lin .t{flex:1;min-width:0;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:33px;letter-spacing:1px;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1}
+.lin .n{flex:none;width:70px;text-align:center;font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:28px;color:#CFCFCF}
+.lin .n.pts{width:86px;font-family:Anton,Impact,sans-serif;font-weight:400;font-size:36px;color:#fff}
+.topo-tab{padding-bottom:12px;border-bottom:2px solid #262626}
+.topo-tab .p,.topo-tab .t,.topo-tab .n{font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:18px;letter-spacing:2px;color:#8E8E8E}
+.topo-tab .esc-sp{width:44px;flex:none}
+.linhas{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding-top:6px}
+.linhas .lin{padding:14px 0;border-bottom:2px solid #1C1C1C}
+.leg{flex:none;display:flex;align-items:center;gap:28px;padding-top:20px}
+.leg span{display:flex;align-items:center;gap:10px;font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:18px;letter-spacing:2px;color:#A3A3A3;text-transform:uppercase}
+.leg i{width:6px;height:22px;background:var(--verde)}
+.leg i.baixa{background:#5A5A5A}
 {% endblock %}
 {% block corpo %}
-<div class="fundo"></div>
-<div class="fita"><span>{{ d.tag or 'Classificação' }}</span>{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
-{% if d.parte %}<div class="parte">{{ d.parte }}</div>{% endif %}
-<h1 class="manchete fit" data-max="84" data-min="48">{{ d.titulo|destaque }}</h1>
-<table class="tab"><tr><th>#</th><th class="t">Time</th><th>P</th><th>J</th><th>V</th><th>SG</th></tr>
-{% for r in d.linhas or [] %}<tr><td class="p">{{ r.pos }}</td><td class="t">{% if r.escudo %}<img src="{{ r.escudo }}" alt="">{% endif %}{{ r.time }}</td><td class="pts">{{ r.pts }}</td><td>{{ r.j }}</td><td>{{ r.v }}</td><td>{{ r.sg }}</td></tr>{% endfor %}
-</table>
+<div class="cab">
+  <div class="hachura"></div>
+  <div class="in">
+    <div class="placas">
+      <div class="placa"><b>Classificação</b></div>
+      <div class="rotulo">{{ d.fase or '' }}{% if d.fase and d.parte %} &middot; {% endif %}{{ d.parte or '' }}</div>
+    </div>
+    <h1 class="um" data-min="52">{{ liga }}</h1>
+  </div>
+</div>
+<div class="regua"></div>
+<div class="tab">
+  <div class="lin topo-tab"><span class="p">#</span><i class="z"></i><span class="esc-sp"></span><span class="t">TIME</span><span class="n pts" style="font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:18px;color:#8E8E8E">P</span><span class="n">J</span><span class="n">V</span><span class="n">SG</span></div>
+  <div class="linhas">
+  {% for r in linhas %}
+    <div class="lin">
+      <span class="p">{{ r.pos }}</span><i class="z {{ r.zona or '' }}"></i>{{ v.escudo(r.escudo, 44) }}
+      <span class="t um" data-min="24">{{ r.time }}</span>
+      <span class="n pts">{{ r.pts }}</span><span class="n">{{ r.j }}</span><span class="n">{{ r.v }}</span><span class="n">{{ r.sg }}</span>
+    </div>
+  {% endfor %}
+  </div>
+  {% if d.legenda %}<div class="leg">{% for l in d.legenda %}<span><i class="{{ l.zona }}"></i>{{ l.txt }}</span>{% endfor %}</div>{% endif %}
+</div>
 {% endblock %}

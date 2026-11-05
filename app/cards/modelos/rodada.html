@@ -1,37 +1,94 @@
-{% extends "base.html" %}
-{% set n = d.jogos|length %}
-{% set alt = 96 if n <= 6 else (86 if n <= 7 else 76) %}
+{% extends "vivo.html" %}
+{% import "_vivo.html" as v %}
+{#- Rodada do dia · um slide por campeonato (manual AO VIVO, rodada-jogos.html).
+    dados: fase ("RODADA 32" / "OITAVAS DE FINAL"), data ("QUI 05 NOV"), liga ("Brasileirão Série A"), parte ("1/2"),
+           jogos [{hora, casa, fora, escudo_casa, escudo_fora, canal?}] — até 10 por slide -#}
+{% set jogos = (d.jogos or [])[:10] %}
+{% set n = jogos|length %}
+{% set t = {'pad': 30, 'esc': 64, 'nome': 42, 'hora': 44} if n <= 3 else
+           ({'pad': 20, 'esc': 54, 'nome': 38, 'hora': 40} if n <= 7 else
+           ({'pad': 15, 'esc': 50, 'nome': 36, 'hora': 38} if n == 8 else {'pad': 11, 'esc': 46, 'nome': 34, 'hora': 36})) %}
+{% set liga = d.liga or (d.titulo|sem_destaque).split(' · ')[0] or d.tag %}
+{% set duelo = n <= 3 and not (jogos|selectattr('gols_casa', 'number')|list) %}
+{% set dz = {'esc': 200, 'nome': 46, 'hora': 120} if n == 1 else ({'esc': 150, 'nome': 40, 'hora': 92} if n == 2 else {'esc': 116, 'nome': 36, 'hora': 72}) %}
 {% block estilo %}
-.foto{bottom:auto;height:560px}
-.sombra{position:absolute;left:0;right:0;top:0;height:562px;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.05) 35%,rgba(0,0,0,.8) 80%,#000 100%)}
-.cab{position:absolute;left:52px;right:52px;top:250px;z-index:5}
-.cab .manchete{max-height:220px}
-.cab .data{display:flex;align-items:center;gap:12px;font-weight:700;font-size:32px;margin-top:14px;opacity:.9}
-.cab .data img{width:44px;height:44px;object-fit:contain}
-.lista{position:absolute;left:40px;right:40px;top:{{ 560 if n <= 6 else 540 }}px;z-index:5;display:flex;flex-direction:column}
-.jogo{height:{{ alt }}px;display:grid;grid-template-columns:130px 1fr 40px 1fr;align-items:center;gap:10px;border-bottom:2px solid rgba(255,255,255,.12)}
-.jogo .h{font-weight:900;font-style:italic;font-size:{{ 46 if n <= 7 else 40 }}px;letter-spacing:-1px;color:var(--cor)}
-.jogo .t{display:flex;align-items:center;gap:16px;font-weight:800;font-style:italic;font-size:{{ 40 if n <= 7 else 34 }}px;text-transform:uppercase;min-width:0;line-height:1}
-.jogo .t span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.jogo .t.c{justify-content:flex-end;text-align:right}
-.jogo .t img{width:{{ 56 if n <= 7 else 48 }}px;height:{{ 56 if n <= 7 else 48 }}px;object-fit:contain;flex:none}
-.jogo .x{text-align:center;font-weight:700;font-size:28px;opacity:.5}
+.cab{position:relative;flex:none;height:232px;background:#111;overflow:hidden;padding:44px 56px 0}
+.cab .hachura{position:absolute;right:-90px;top:-60px;width:440px;height:360px;transform:skewX(-10deg);opacity:.35}
+.cab .in{position:relative;display:flex;flex-direction:column;gap:16px}
+.cab .placa>b{font-size:23px;letter-spacing:2.8px}
+.cab h1{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:78px;line-height:1;letter-spacing:.6px;
+  text-transform:uppercase;white-space:nowrap;padding-top:.1em;margin-top:-.04em;max-width:968px}
+.lista{flex:1;min-height:0;padding:14px 56px 26px;display:flex;flex-direction:column}
+.jogos{flex:1;min-height:0;display:flex;flex-direction:column}
+/* linhas dividem a altura por igual (conteúdo centrado entre os fios); jogo sozinho não vira faixa gigante */
+.jogo{flex:1 1 0;max-height:{{ 150 if n <= 3 else 132 }}px;display:flex;align-items:center;gap:22px;padding:{{ (t.pad * 0.5)|int }}px 0;border-bottom:2px solid #1C1C1C}
+.jogo .h{width:104px;flex:none;display:flex;flex-direction:column;gap:2px}
+.jogo .h b{font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:{{ t.hora }}px;line-height:1;color:var(--verde)}
+.jogo .h span{font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:16px;letter-spacing:1.4px;color:#8E8E8E;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+.jogo .t{flex:1;min-width:0;display:flex;align-items:center;gap:16px}
+.jogo .t.casa{justify-content:flex-end}
+.jogo .t b{font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:{{ t.nome }}px;letter-spacing:1px;line-height:1.15;
+  text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.jogo .t .esc{flex:none;object-fit:contain}
+.jogo .t .esc.vazio{display:block;border:2px dashed #3E3E3E;border-radius:50%}
+.jogo .x{flex:none;font-family:Anton,Impact,sans-serif;font-size:26px;color:#6F6F6F}
+.jogo .placar{flex:none;display:flex;align-items:center;gap:10px;background:#121212;padding:6px 14px;
+  font-family:Anton,Impact,sans-serif;font-size:{{ t.hora }}px;line-height:.9}
+.jogo .placar i{width:12px;height:4px;background:#4A4A4A}
+.duelos{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.duelo{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:28px 0;border-bottom:2px solid #1C1C1C}
+.duelo:last-child{border-bottom:0}
+.duelo .lado{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:16px}
+.duelo .lado .esc{object-fit:contain}
+.duelo .lado .esc.vazio{display:block;border:3px dashed #3E3E3E;border-radius:50%}
+.duelo .lado b{max-width:100%;font-family:Barlow,CardInter,sans-serif;font-weight:800;font-size:{{ dz.nome }}px;letter-spacing:1px;
+  line-height:1.15;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.duelo .meio{flex:none;display:flex;flex-direction:column;align-items:center;gap:8px}
+.duelo .meio b{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:{{ dz.hora }}px;line-height:1;letter-spacing:1px;color:var(--verde)}
+.duelo .meio span{font-family:Barlow,CardInter,sans-serif;font-weight:700;font-size:18px;letter-spacing:2px;color:#8E8E8E;text-transform:uppercase}
+.cta{flex:none;margin-top:auto;display:flex;align-items:center;gap:16px;padding-top:22px}
+.cta .barra{height:44px}
+.cta p{font-size:19px;line-height:1.4;color:#CFCFCF}
+.cta p strong{color:#fff;font-weight:600}
 {% endblock %}
 {% block corpo %}
-<div class="foto {{ '' if d.foto else 'sem' }}" {% if d.foto %}style="background-image:url('{{ d.foto }}')"{% endif %}></div>
-<div class="sombra"></div>
-{% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
-<div class="fita">{% if d.tag %}<span>{{ d.tag }}</span>{% endif %}{% if d.tag2 %}<i>{{ d.tag2 }}</i>{% endif %}</div>
 <div class="cab">
-  <h1 class="manchete fit" data-max="{{ d.tamanho or 110 }}" data-min="60">{{ d.titulo|destaque }}</h1>
-  {% if d.data %}<div class="data">{% if d.logo_liga %}<img src="{{ d.logo_liga }}" alt="">{% endif %}{{ d.data }}</div>{% endif %}
+  <div class="hachura"></div>
+  <div class="in">
+    <div class="placas">
+      <div class="placa"><b>{{ d.fase or 'Hoje' }}</b></div>
+      <div class="rotulo">{{ d.data }}{% if d.data %} &middot; {% endif %}HORÁRIO DE BRASÍLIA{% if d.parte %} &middot; {{ d.parte }}{% endif %}</div>
+    </div>
+    <h1 class="um" data-min="52">{{ liga }}</h1>
+  </div>
 </div>
+<div class="regua"></div>
 <div class="lista">
-{% for j in d.jogos[:8] %}
-  <div class="jogo"><div class="h">{{ j.hora }}</div>
-    <div class="t c"><span>{{ j.casa }}</span>{% if j.escudo_casa %}<img src="{{ j.escudo_casa }}" alt="">{% endif %}</div>
-    <div class="x">x</div>
-    <div class="t">{% if j.escudo_fora %}<img src="{{ j.escudo_fora }}" alt="">{% endif %}<span>{{ j.fora }}</span></div></div>
+{% if duelo %}
+<div class="duelos">
+{% for j in jogos %}
+  <div class="duelo">
+    <div class="lado">{{ v.escudo(j.escudo_casa, dz.esc) }}<b class="um" data-min="{{ (dz.nome * 0.7)|int }}">{{ j.casa }}</b></div>
+    <div class="meio"><b>{{ j.hora|hora_br }}</b>{% if j.canal %}<span>{{ j.canal }}</span>{% endif %}</div>
+    <div class="lado">{{ v.escudo(j.escudo_fora, dz.esc) }}<b class="um" data-min="{{ (dz.nome * 0.7)|int }}">{{ j.fora }}</b></div>
+  </div>
 {% endfor %}
+</div>
+{% else %}
+<div class="jogos">
+{% for j in jogos %}
+  <div class="jogo">
+    <div class="h"><b>{{ j.hora|hora_br }}</b>{% if j.canal %}<span>{{ j.canal }}</span>{% endif %}</div>
+    <div class="t casa"><b class="um" data-min="{{ (t.nome * 0.72)|int }}">{{ j.casa }}</b>{{ v.escudo(j.escudo_casa, t.esc) }}</div>
+    {% if j.gols_casa is number %}
+    <div class="placar"><span>{{ j.gols_casa }}</span><i></i><span>{{ j.gols_fora }}</span></div>
+    {% else %}<div class="x">X</div>{% endif %}
+    <div class="t">{{ v.escudo(j.escudo_fora, t.esc) }}<b class="um" data-min="{{ (t.nome * 0.72)|int }}">{{ j.fora }}</b></div>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+  <div class="cta"><i class="barra"></i><p>Palpites de cada jogo no app. <strong>Link na bio.</strong></p></div>
 </div>
 {% endblock %}

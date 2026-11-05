@@ -1,0 +1,37 @@
+{#- Peças repetidas da direção AO VIVO. Uso: {% import "_vivo.html" as v %} -#}
+
+{# Zona de foto. Prioridade (manual): jogador conferido sangrando › retrato oficial emoldurado ›
+   escudos sobre a hachura › palavra-fantasma. Estádio vazio nunca entra no lugar do jogador. #}
+{% macro foto(d, ay=0.32, topo=110, base=200, esc=340, esc2=250, ret=330, fantasma=None, fant=300) -%}
+{% if d.foto %}
+  <img class="foto" src="{{ d.foto }}" alt="" data-ay="{{ ay }}"{% if d.rosto %} data-fx="{{ d.rosto[0] }}" data-fy="{{ d.rosto[1] }}"{% endif %}>
+  {% if d.credito_foto %}<div class="credito">{{ d.credito_foto }}</div>{% endif %}
+{% else %}
+  {% if fantasma %}<div class="fantasma" style="font-size:{{ fant }}px">{{ fantasma }}</div>{% endif %}
+  <div class="palco" style="top:{{ topo }}px;bottom:{{ base }}px">
+  {% if d.retrato %}
+    <div class="cartao">
+      <div class="quadro" style="width:{{ ret }}px;height:{{ ret }}px">
+        <img class="ret" src="{{ d.retrato }}" alt="">
+        {% if d.escudo %}<img class="esc-canto" src="{{ d.escudo }}" alt="">{% endif %}
+      </div>
+      {% set quem = (d.jogador or {}).get('nome') if d.jogador is mapping else none %}
+      {% if quem %}<div class="placa vazada"><b>{{ quem }}</b></div>{% endif %}
+    </div>
+  {% elif d.escudo_casa and d.escudo_fora %}
+    <img class="esc" src="{{ d.escudo_casa }}" alt="" style="width:{{ esc2 }}px;height:{{ esc2 }}px">
+    <span class="xis">X</span>
+    <img class="esc" src="{{ d.escudo_fora }}" alt="" style="width:{{ esc2 }}px;height:{{ esc2 }}px">
+  {% elif d.escudo %}
+    <img class="esc" src="{{ d.escudo }}" alt="" style="width:{{ esc }}px;height:{{ esc }}px">
+  {% endif %}
+  </div>
+{% endif %}
+{%- endmacro %}
+
+{% macro selo(marca) -%}<div class="selo"><b>{{ marca.selo }}</b></div>{%- endmacro %}
+
+{# Escudo de time; sem escudo, um círculo discreto no lugar (a linha não perde o alinhamento). #}
+{% macro escudo(src, tam) -%}
+{% if src %}<img class="esc" src="{{ src }}" alt="" style="width:{{ tam }}px;height:{{ tam }}px">{% else %}<span class="esc vazio" style="width:{{ tam }}px;height:{{ tam }}px"></span>{% endif %}
+{%- endmacro %}
