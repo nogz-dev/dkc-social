@@ -313,6 +313,25 @@ async def espelho_so_formato_novo() -> None:
     log.info("[BOOT] espelho: %s posts antigos marcados para não ir à Comunidade", n)
 
 
+# a partir daqui a arte é do formato novo e pode ir pro app (o que veio antes nunca vai)
+ESPELHO_DESDE = datetime(2026, 11, 5, 23, 28, tzinfo=timezone.utc)
+
+
+async def espelho_reenviar_aprovados_unico() -> None:
+    """Uma vez só (06/11/2026): o que o Nog aprovou nas últimas 6h volta pra fila da Comunidade. Até aqui, post que
+    tinha ficado mais de 6h na fila era marcado como velho e não ia nem depois de aprovado. O que já tinha ido o
+    app reconhece pelo ref e não duplica (nem manda push de novo)."""
+    marca = "espelho_reenvio_aprovados_2026_11_06"
+    if await cfg_get(marca):
+        return
+    n = await pool.fetchval(
+        "WITH x AS (UPDATE posts SET espelhado_em=NULL WHERE espelhado_em IS NOT NULL AND status <> 'recusado' "
+        "AND arte_pendente = false AND decidido_em > now() - interval '6 hours' AND criado_em >= $1 "
+        "RETURNING 1) SELECT count(*) FROM x", ESPELHO_DESDE)
+    await cfg_set(marca, datetime.now(timezone.utc).isoformat())
+    log.info("[BOOT] espelho: %s post(s) aprovado(s) nas últimas 6h voltam pra fila da Comunidade", n)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -326,6 +345,7 @@ async def lifespan(app: FastAPI):
     await segurar_auto_unico()
     await religar_auto_unico()
     await espelho_so_formato_novo()
+    await espelho_reenviar_aprovados_unico()
     try:
         await sincronizar_perfis()
     except Exception as e:
@@ -1693,10 +1713,12 @@ async def _aprovar_um(pid: uuid.UUID, agendar_para: Optional[datetime], base: st
         # trava otimista: só sai de pendente/erro uma vez, mesmo com 2 aparelhos aprovando juntos.
         # espelhado_em=NULL: aprovou, vai pra Comunidade também — mesmo o post que ficou mais de 6h na fila e foi
         # só marcado como velho. Se já tinha ido, o app reconhece o mesmo ref e não duplica (nem manda push).
+        # Arte do formato antigo (antes de ESPELHO_DESDE) continua sem ir pro app.
         row = await pool.fetchrow(
-            "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2, espelhado_em=NULL "
+            "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2, "
+            "espelhado_em = CASE WHEN criado_em >= $3 THEN NULL ELSE espelhado_em END "
             "WHERE id=$1 AND status IN ('pendente','erro') RETURNING id",
-            pid, agendar_para,
+            pid, agendar_para, ESPELHO_DESDE,
         )
     if not row:
         return {"id": str(pid), "ok": False, "erro": "já decidido em outro aparelho"}
