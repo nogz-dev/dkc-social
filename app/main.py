@@ -1816,6 +1816,20 @@ ESPELHO_ATRASO_MAX_H = int(os.getenv("ESPELHO_ATRASO_MAX_H", "6"))   # post velh
 # diagnóstico do espelho (aparece em Ajustes → Saúde do sistema e em /api/saude)
 _espelho_estado: dict[str, Any] = {"ultima_volta": None, "ultimo_envio": None, "ultimo_post": None,
                                    "ultimo_erro": None, "erro_em": None, "enviados": 0}
+# para o QG: enviados no dia (zera à meia-noite e no deploy) e falhas seguidas por post
+_espelho_qg_estado: dict[str, Any] = {"dia": None, "enviados": 0, "ignorados": 0, "desde": None, "falhas": {}}
+
+
+def _espelho_qg_conta(chave: str, pid=None) -> None:
+    e = _espelho_qg_estado
+    hoje = datetime.now(robo_rodada.TZ).date()
+    if e["dia"] != hoje:
+        e.update(dia=hoje, enviados=0, ignorados=0, desde=datetime.now(timezone.utc))
+    if chave == "falha":
+        e["falhas"][str(pid)] = e["falhas"].get(str(pid), 0) + 1
+    elif chave in ("enviados", "ignorados"):
+        e[chave] += 1
+        e["falhas"].pop(str(pid), None)
 
 
 def texto_comunidade(legenda: str) -> str:
@@ -1884,11 +1898,14 @@ async def job_espelho_seutipster() -> None:
                                                        ultimo_post=f"{r['linha']}: {(r['titulo'] or '')[:80]}",
                                                        enviados=_espelho_estado["enviados"] + 1)
                                 log.info("[ESPELHO] post %s (%s) foi pra Comunidade", r["id"], r["linha"])
+                                _espelho_qg_conta("enviados", r["id"])
                             else:
+                                _espelho_qg_conta("ignorados", r["id"])
                                 log.info("[ESPELHO] post %s ignorado: atrasado mais de %sh", r["id"], ESPELHO_ATRASO_MAX_H)
                             await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
                         except Exception as e:
                             _espelho_estado.update(ultimo_erro=str(e)[:200], erro_em=_iso(datetime.now(timezone.utc)))
+                            _espelho_qg_conta("falha", r["id"])
                             log.warning("[ESPELHO] post %s falhou, tenta de novo: %s", r["id"], str(e)[:200])
         except Exception:
             log.exception("[JOB] espelho seutipster")
@@ -1996,6 +2013,29 @@ async def saude(request: Request, _=Depends(exige_login)):
 
 # ------------------------------------------------- QG do Nog (status) ----
 
+async def _espelho_qg() -> dict:
+    """Espelho na Comunidade do SeuTipster, para o boneco "Comunidade" do QG. Só leitura."""
+    _espelho_qg_conta("")
+    e = _espelho_qg_estado
+    configurado = bool(os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"))
+    try:
+        aguardando = await pool.fetchval(
+            "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false "
+            "AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()")
+        agendados = await pool.fetchval(
+            "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' "
+            "AND COALESCE(agendar_para, sugerido_para, criado_em) > now()")
+    except Exception:
+        aguardando = agendados = None
+    return {"ligado": ESPELHO_LIGADO and configurado,
+            "desligado_por": None if configurado else "variáveis SEUTIPSTER_URL/SEUTIPSTER_ROBO_KEY",
+            "enviados_hoje": e["enviados"], "ignorados_hoje": e["ignorados"],
+            "desde": e["desde"].isoformat() if e["desde"] else None,
+            "ultima_passada": _espelho_estado["ultima_volta"], "ultimo_envio": _espelho_estado["ultimo_envio"],
+            "aguardando": aguardando, "agendados": agendados, "erro": _espelho_estado["ultimo_erro"],
+            "travados": sum(1 for n in e["falhas"].values() if n >= 3), "push_linhas": sorted(ESPELHO_PUSH)}
+
+
 def _digital(v: str) -> str:
     """Impressão digital curta da chave: compara os dois lados sem revelar a chave."""
     return hashlib.sha256(v.encode()).hexdigest()[:8] if v else "vazia"
@@ -2072,6 +2112,7 @@ async def qg_status(_=Depends(exige_qg)):
                            "erro": _resultados_estado["erro"]},
             "pauta": {"ultima": _iso(_pauta_estado["ultima"]), "erro": _pauta_estado["erro"]},
         },
+        "espelho": await _espelho_qg(),
         # Gestor de Tokens do QG: uso de IA por dia/modelo/origem (últimos 7 dias). Preço é calculado no QG.
         "ia": {"dias": await uso_ia.resumo(7), "limite_imagens_dia": openai_img.LIMITE_DIA,
                "qualidade_imagem": openai_img.QUALIDADE, "tamanho_imagem": openai_img.TAMANHO,
