@@ -86,8 +86,15 @@ def _sem_acento(t: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", t or "") if unicodedata.category(c) != "Mn").lower().strip()
 
 
+NOTICIAS_TODAS_AUTO = os.getenv("NOTICIAS_TODAS_AUTO", "1") != "0"
+NOTICIA_ATRASO_MAX_H = float(os.getenv("NOTICIA_ATRASO_MAX_H", "3"))  # fila do Instagram mais longa que isso: não agenda
+
+
 def noticia_sai_sozinha(post: dict, nota_ef: float, problemas: list) -> bool:
-    """Muito relevante (nota ≥ 8) + clube grande + não é rumor + legenda sem problema."""
+    """Pedido do Nog (06/11/2026): o card de notícia é só texto, sem foto, então toda notícia sai sem aprovação.
+    NOTICIAS_TODAS_AUTO=0 volta à regra antiga: muito relevante (nota ≥ 8) + clube grande + não é rumor."""
+    if NOTICIAS_TODAS_AUTO:
+        return True
     if nota_ef < NOTA_NOTICIA_AUTO or problemas:
         return False
     if "rumor" in _sem_acento(post.get("tag") or "") or "rumor" in _sem_acento(post.get("tag2") or ""):
@@ -281,6 +288,17 @@ async def segurar_auto_unico() -> None:
     log.info("[BOOT] publicação automática desligada: tudo passa pela fila até a arte nova ser aprovada")
 
 
+async def religar_auto_unico() -> None:
+    """Pedido do Nog (06/11/2026, 16h17): sem foto não há o que aprovar, tudo volta a sair sozinho no Instagram
+    (Rodada, Resultados do dia, tabela e notícias). Equivale a ligar "Instagram automático" em Ajustes. Uma vez só."""
+    marca = "auto_instagram_ligado_2026_11_06"
+    if await cfg_get(marca):
+        return
+    await cfg_set("auto_resultado", "1")
+    await cfg_set(marca, datetime.now(timezone.utc).isoformat())
+    log.info("[BOOT] Instagram automático religado")
+
+
 async def espelho_so_formato_novo() -> None:
     """Uma vez só: o que foi criado antes do formato novo (no ar às 20h28 de 05/11/2026) e ainda não foi
     para a Comunidade fica marcado como enviado, sem enviar (arte antiga não vai para o app)."""
@@ -305,6 +323,7 @@ async def lifespan(app: FastAPI):
     await vapid()
     await limpeza_unica()
     await segurar_auto_unico()
+    await religar_auto_unico()
     await espelho_so_formato_novo()
     try:
         await sincronizar_perfis()
@@ -499,7 +518,15 @@ async def criar_post(
         return pid
     if pode_auto and await auto_resultado_ligado():
         quando = sugerido_para if (sugerido_para and sugerido_para > datetime.now(timezone.utc) + timedelta(minutes=3)) else None
-        res = await _aprovar_um(pid, quando, base_publica(), agora=quando is None and linha != "rodada")
+        if linha == "noticia" and quando is None:
+            prox = await proximo_horario()
+            if prox and prox - datetime.now(timezone.utc) > timedelta(hours=NOTICIA_ATRASO_MAX_H):
+                # a notícia só entraria no Instagram daqui a horas (já velha): fica na fila; a Comunidade recebe igual
+                await evento(pid, "fila_cheia", f"Instagram só teria horário em {_iso(prox)}")
+                asyncio.create_task(avisar_novo_post(pid, titulo or legenda[:80],
+                                                     "⏳ Fila do Instagram cheia: aprove se ainda fizer sentido"))
+                return pid
+        res = await _aprovar_um(pid, quando, base_publica(), agora=quando is None and linha not in ("rodada", "noticia"))
         await evento(pid, "auto_aprovado", json.dumps(res))
         asyncio.create_task(enviar_push({
             "title": {"rodada": "📅 Rodada do dia", "tabela": "📊 Tabela", "resultado": "✅ Resultado",
@@ -1879,12 +1906,12 @@ async def job_espelho_seutipster() -> None:
                     # "Resultados automáticos" em Ajustes vale só para o Instagram
                     rows = await pool.fetch(
                         """SELECT id, linha, titulo, legenda,
-                                  COALESCE(agendar_para, sugerido_para, criado_em) AS quando
+                                  COALESCE(sugerido_para, criado_em) AS quando
                              FROM posts
                             WHERE espelhado_em IS NULL
                               AND status <> 'recusado'
                               AND arte_pendente = false
-                              AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()
+                              AND COALESCE(sugerido_para, criado_em) <= now()
                             ORDER BY quando
                             LIMIT 5"""
                     )
@@ -2021,10 +2048,10 @@ async def _espelho_qg() -> dict:
     try:
         aguardando = await pool.fetchval(
             "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false "
-            "AND COALESCE(agendar_para, sugerido_para, criado_em) <= now()")
+            "AND COALESCE(sugerido_para, criado_em) <= now()")
         agendados = await pool.fetchval(
             "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' "
-            "AND COALESCE(agendar_para, sugerido_para, criado_em) > now()")
+            "AND COALESCE(sugerido_para, criado_em) > now()")
     except Exception:
         aguardando = agendados = None
     return {"ligado": ESPELHO_LIGADO and configurado,

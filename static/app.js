@@ -390,7 +390,7 @@ async function renderAjustes() {
     <div class="box"><h3>Perfis do Instagram</h3><p>Puxa as contas conectadas no Publora.</p>
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
-    <div class="box"><h3>Publicação automática</h3><p><b>App SeuTipster (Comunidade):</b> recebe tudo sozinho, sem passar pela fila. <b>Instagram:</b> com a chave abaixo ligada, saem sem aprovação a <b>Rodada do dia</b>, os <b>Resultados do dia</b>, a <b>tabela</b> de fim de rodada e as notícias muito relevantes; desligada, tudo do Instagram passa pela fila.</p>
+    <div class="box"><h3>Publicação automática</h3><p><b>App SeuTipster (Comunidade):</b> recebe tudo sozinho, sem passar pela fila. <b>Instagram:</b> com a chave abaixo ligada, saem sem aprovação a <b>Rodada do dia</b>, os <b>Resultados do dia</b>, a <b>tabela</b> de fim de rodada e <b>todas as notícias</b> (de 30 em 30 min; se a fila passar de 3h, a notícia espera aprovação); desligada, tudo do Instagram passa pela fila.</p>
       <div class="linha"><span>Instagram automático</span><span id="ajAuto" class="muted">…</span></div>
       <button class="btn" data-act="auto" id="bAuto">…</button></div>
     <div class="box"><h3>Robô de resultados</h3><p>Quando acaba o último jogo do dia, sai sozinho um carrossel com todos os resultados, por campeonato. Também cuida da tabela no fim de cada rodada.</p>
