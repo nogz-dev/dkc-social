@@ -15,6 +15,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import uuid
@@ -1812,6 +1813,24 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
 ESPELHO_LIGADO = os.getenv("ESPELHO_SEUTIPSTER", "1") != "0"
 ESPELHO_PUSH = {x.strip() for x in os.getenv("ESPELHO_PUSH_LINHAS", "rodada,resultado").split(",") if x.strip()}
 ESPELHO_ATRASO_MAX_H = int(os.getenv("ESPELHO_ATRASO_MAX_H", "6"))   # post velho nao vai; so e marcado
+# diagnóstico do espelho (aparece em Ajustes → Saúde do sistema e em /api/saude)
+_espelho_estado: dict[str, Any] = {"ultima_volta": None, "ultimo_envio": None, "ultimo_post": None,
+                                   "ultimo_erro": None, "erro_em": None, "enviados": 0}
+
+
+def texto_comunidade(legenda: str) -> str:
+    """A legenda do Instagram adaptada para a Comunidade do app: sem a linha de hashtags e sem
+    "link na bio" (quem lê já está dentro do app)."""
+    linhas = []
+    for linha in (legenda or "").splitlines():
+        s = linha.strip()
+        if s and all(p.startswith("#") for p in s.split()):
+            continue
+        if "link na bio" in s.lower():
+            s = re.sub(r",?\s*link na bio\s*\.?", ".", s, flags=re.I).replace("..", ".")
+            s = s.replace("no app SeuTipster", "aqui no app")
+        linhas.append(s)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(linhas)).strip()
 
 
 async def espelhar_um(r, base: str) -> None:
@@ -1823,7 +1842,7 @@ async def espelhar_um(r, base: str) -> None:
     corpo = {
         "ref": f"dkc-{r['id']}",
         "linha": r["linha"],
-        "texto": r["legenda"] or r["titulo"] or "",
+        "texto": texto_comunidade(r["legenda"] or r["titulo"] or ""),
         "midias": urls[:10],
         "push": r["linha"] in ESPELHO_PUSH,
     }
@@ -1855,16 +1874,21 @@ async def job_espelho_seutipster() -> None:
                             ORDER BY quando
                             LIMIT 5"""
                     )
+                    _espelho_estado["ultima_volta"] = _iso(datetime.now(timezone.utc))
                     for r in rows:
                         atrasado = (datetime.now(timezone.utc) - r["quando"]).total_seconds() > ESPELHO_ATRASO_MAX_H * 3600
                         try:
                             if not atrasado:
                                 await espelhar_um(r, base)
+                                _espelho_estado.update(ultimo_envio=_iso(datetime.now(timezone.utc)), ultimo_erro=None,
+                                                       ultimo_post=f"{r['linha']}: {(r['titulo'] or '')[:80]}",
+                                                       enviados=_espelho_estado["enviados"] + 1)
                                 log.info("[ESPELHO] post %s (%s) foi pra Comunidade", r["id"], r["linha"])
                             else:
                                 log.info("[ESPELHO] post %s ignorado: atrasado mais de %sh", r["id"], ESPELHO_ATRASO_MAX_H)
                             await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
                         except Exception as e:
+                            _espelho_estado.update(ultimo_erro=str(e)[:200], erro_em=_iso(datetime.now(timezone.utc)))
                             log.warning("[ESPELHO] post %s falhou, tenta de novo: %s", r["id"], str(e)[:200])
         except Exception:
             log.exception("[JOB] espelho seutipster")
@@ -1964,6 +1988,9 @@ async def saude(request: Request, _=Depends(exige_login)):
     out["recorte"] = importlib.util.find_spec("rembg") is not None
     out["imagens_openai"] = {**openai_img.status(), "chave": await openai_img.testar_chave()}
     out["fotos_jogadores"] = foto_jogador.STATS
+    out["espelho"] = {"ligado": ESPELHO_LIGADO,
+                      "configurado": bool(os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY")),
+                      "push_linhas": sorted(ESPELHO_PUSH), **_espelho_estado}
     return out
 
 

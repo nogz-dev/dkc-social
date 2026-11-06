@@ -415,6 +415,10 @@ async function renderAjustes() {
       <div class="linha"><span>Publora</span>${s.publora.ok ? `<span class="ok">Conectado (${s.publora.conexoes} conta${s.publora.conexoes === 1 ? "" : "s"})</span>` : `<span class="nok">${esc(s.publora.erro)}</span>`}</div>
       <div class="linha"><span>Aparelhos com notificação</span><span>${s.push_inscritos}</span></div>
       <div class="linha"><span>API-Football</span>${s.api_football ? `<span class="ok">Chave configurada</span>` : `<span class="nok">Falta API_FOOTBALL_KEY</span>`}</div>
+      <div class="linha"><span>App SeuTipster</span>${!s.espelho || !s.espelho.configurado ? `<span class="nok">Não conectado (falta SEUTIPSTER_URL / SEUTIPSTER_ROBO_KEY no Railway)</span>`
+        : !s.espelho.ligado ? `<span class="nok">Desligado (ESPELHO_SEUTIPSTER=0)</span>`
+        : s.espelho.ultimo_erro ? `<span class="nok">Erro ${s.espelho.erro_em ? quando(s.espelho.erro_em) : ""}: ${esc(s.espelho.ultimo_erro)}</span>`
+        : `<span class="ok">Conectado · ${s.espelho.ultimo_envio ? `último envio ${quando(s.espelho.ultimo_envio)}` : "nada enviado desde o último deploy"}</span>`}</div>
       <div class="linha"><span>Robôs</span>${s.robo_configurado ? `<span class="ok">Chave configurada</span>` : `<span class="muted">Sem chave (fatia 3)</span>`}</div>
       <div class="linha"><span>Endereço público</span><span class="muted">${esc(s.base_publica)}</span></div>`;
   } catch (err) { $("#ajSaude").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
