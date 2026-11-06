@@ -124,6 +124,7 @@ document.addEventListener("click", (e) => {
   else if (act === "not-ligar") ligarNoticias();
   else if (act === "not-rodar") rodarNoticias();
   else if (act === "res-ligar") ligarResultados();
+  else if (act === "espelho-testar") testarEspelho();
   else if (act === "sair") sair();
 });
 
@@ -376,6 +377,30 @@ $("#formNovo").addEventListener("submit", async (e) => {
 const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const instalado = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
+/* Situação do envio para a Comunidade do app SeuTipster, em palavras de gente (vem de /api/saude) */
+function statusApp(e) {
+  if (!e || !e.configurado) return `<span class="nok">Não conectado: faltam SEUTIPSTER_URL e SEUTIPSTER_ROBO_KEY no Railway do DKC Social</span>`;
+  if (!e.ligado) return `<span class="nok">Desligado (ESPELHO_SEUTIPSTER=0)</span>`;
+  const c = e.conexao;
+  if (c && !c.ok) return `<span class="nok">${esc(c.motivo)}${c.em ? ` (${quando(c.em)})` : ""}</span>`;
+  if (e.ultimo_erro && !(c && c.ok && c.em > (e.erro_em || ""))) return `<span class="nok">Erro ${e.erro_em ? quando(e.erro_em) : ""}: ${esc(e.ultimo_erro)}</span>`;
+  if (!c) return `<span class="muted">Testando a conexão…</span>`;
+  return `<span class="ok">Conectado · ${e.ultimo_envio ? `último envio ${quando(e.ultimo_envio)}` : "nada novo pra mandar"}</span>`;
+}
+
+async function testarEspelho() {
+  toast("Testando o app SeuTipster…");
+  try {
+    const r = await api("/api/espelho/testar", { method: "POST" });
+    const c = r.conexao || {}, p = r.passada || {};
+    if (!c.ok) toast(c.motivo || "Não deu certo", true);
+    else if (p.erro) toast(p.erro, true);
+    else toast(p.enviados ? `Conexão OK · ${p.enviados} post${p.enviados === 1 ? "" : "s"} na Comunidade agora`
+      : `Conexão OK · ${r.aguardando ? `${r.aguardando} esperando` : "nada novo pra mandar"}`);
+  } catch (err) { toast(err.message, true); }
+  if (S.view === "ajustes") renderAjustes();
+}
+
 async function renderAjustes() {
   const el = $("#ajustes");
   const perm = "Notification" in window ? Notification.permission : "indisponivel";
@@ -391,8 +416,10 @@ async function renderAjustes() {
       <div id="ajPerfis">${S.perfis.map((p) => `<div class="linha"><span>@${esc(p.handle)}</span><span class="muted">${esc(p.publora_platform_id || "")}</span></div>`).join("") || `<div class="linha"><span class="muted">Nenhum perfil ainda</span></div>`}</div>
       <button class="btn" data-act="sincronizar">Sincronizar com o Publora</button></div>
     <div class="box"><h3>Publicação automática</h3><p><b>App SeuTipster (Comunidade):</b> recebe tudo sozinho, sem passar pela fila. <b>Instagram:</b> com a chave abaixo ligada, saem sem aprovação a <b>Rodada do dia</b>, os <b>Resultados do dia</b>, a <b>tabela</b> de fim de rodada e <b>todas as notícias</b> (de 30 em 30 min; se a fila passar de 3h, a notícia espera aprovação); desligada, tudo do Instagram passa pela fila.</p>
+      <div class="linha"><span>App SeuTipster</span><span id="ajApp" class="muted">…</span></div>
       <div class="linha"><span>Instagram automático</span><span id="ajAuto" class="muted">…</span></div>
-      <button class="btn" data-act="auto" id="bAuto">…</button></div>
+      <button class="btn" data-act="auto" id="bAuto">…</button>
+      <button class="btn ghost" data-act="espelho-testar">Testar o app e mandar agora</button></div>
     <div class="box"><h3>Robô de resultados</h3><p>Quando acaba o último jogo do dia, sai sozinho um carrossel com todos os resultados, por campeonato. Também cuida da tabela no fim de cada rodada.</p>
       <div id="ajRes"><p>Verificando…</p></div>
       <button class="btn ghost" data-act="res-ligar" id="bRes">…</button></div>
@@ -411,14 +438,13 @@ async function renderAjustes() {
   try {
     const s = await api("/api/saude");
     const af = $("#ajApiF"); if (af) af.innerHTML = s.api_football ? `<span class="ok">Conectada</span>` : `<span class="nok">Falta a chave</span>`;
+    const ap = $("#ajApp"); if (ap) ap.innerHTML = statusApp(s.espelho);
     $("#ajSaude").innerHTML = `
       <div class="linha"><span>Publora</span>${s.publora.ok ? `<span class="ok">Conectado (${s.publora.conexoes} conta${s.publora.conexoes === 1 ? "" : "s"})</span>` : `<span class="nok">${esc(s.publora.erro)}</span>`}</div>
       <div class="linha"><span>Aparelhos com notificação</span><span>${s.push_inscritos}</span></div>
       <div class="linha"><span>API-Football</span>${s.api_football ? `<span class="ok">Chave configurada</span>` : `<span class="nok">Falta API_FOOTBALL_KEY</span>`}</div>
-      <div class="linha"><span>App SeuTipster</span>${!s.espelho || !s.espelho.configurado ? `<span class="nok">Não conectado (falta SEUTIPSTER_URL / SEUTIPSTER_ROBO_KEY no Railway)</span>`
-        : !s.espelho.ligado ? `<span class="nok">Desligado (ESPELHO_SEUTIPSTER=0)</span>`
-        : s.espelho.ultimo_erro ? `<span class="nok">Erro ${s.espelho.erro_em ? quando(s.espelho.erro_em) : ""}: ${esc(s.espelho.ultimo_erro)}</span>`
-        : `<span class="ok">Conectado · ${s.espelho.ultimo_envio ? `último envio ${quando(s.espelho.ultimo_envio)}` : "nada enviado desde o último deploy"}</span>`}</div>
+      <div class="linha"><span>App SeuTipster</span>${statusApp(s.espelho)}</div>
+      ${s.espelho && s.espelho.configurado ? `<div class="linha"><span>Esperando para ir pro app</span><span>${s.espelho.aguardando ?? "?"}</span></div>` : ""}
       <div class="linha"><span>Robôs</span>${s.robo_configurado ? `<span class="ok">Chave configurada</span>` : `<span class="muted">Sem chave (fatia 3)</span>`}</div>
       <div class="linha"><span>Endereço público</span><span class="muted">${esc(s.base_publica)}</span></div>`;
   } catch (err) { $("#ajSaude").innerHTML = `<p class="nok">${esc(err.message)}</p>`; }
@@ -551,9 +577,10 @@ async function reinscreverSilencioso() {
 async function iniciar() {
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
   await carregarPerfis();
-  irPara("fila");
+  const q = new URLSearchParams(location.search);
+  irPara(q.get("ver") === "ajustes" ? "ajustes" : "fila");   // aviso do app SeuTipster abre direto em Ajustes
   reinscreverSilencioso();
-  const alvo = new URLSearchParams(location.search).get("post");
+  const alvo = q.get("post");
   if (alvo) abrirDetalhe(alvo);
 }
 
@@ -561,7 +588,9 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data && e.data.tipo === "abrir" && e.data.url) {
-      const id = new URL(e.data.url, location.origin).searchParams.get("post");
+      const u = new URL(e.data.url, location.origin);
+      if (u.searchParams.get("ver") === "ajustes") { irPara("ajustes"); return; }
+      const id = u.searchParams.get("post");
       carregar(); if (id) abrirDetalhe(id);
     }
   });

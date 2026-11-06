@@ -20,6 +20,8 @@ Web Push implementado em `app/webpush.py` (RFC 8291/8292) só com `cryptography`
 | `ROBO_KEY` | para robôs | Chave que os robôs usam em `POST /api/robo/posts` (header `x-robo-key`) |
 | `PUBLIC_BASE_URL` | não | Endereço público (ex.: `https://social.dkc.app`). Sem ela usa `RAILWAY_PUBLIC_DOMAIN` |
 | `VAPID_PUBLIC` / `VAPID_PRIVATE_PEM` | não | Chaves de push. Sem elas, são geradas no 1º boot e guardadas no banco |
+| `SEUTIPSTER_URL` | para o app | Endereço do app SeuTipster (ex.: `https://app-seutipster-production.up.railway.app`) |
+| `SEUTIPSTER_ROBO_KEY` | para o app | Mesma chave que está em `ROBO_COMUNIDADE_KEY` no SeuTipster (aqui também vale com esse nome) |
 
 ## Rotas principais
 - `POST /api/login` · `GET /api/posts?status=pendente` · `POST /api/posts/{id}/aprovar` · `POST /api/posts/{id}/recusar`
@@ -47,6 +49,17 @@ Resultados do dia e da tabela ("Instagram automático" em Ajustes, religado no b
 30 em 30 min; se o próximo horário livre passar de 3h (`NOTICIA_ATRASO_MAX_H`), ela fica na fila para aprovação.
 A Comunidade do SeuTipster recebe na hora editorial (Rodada às 9h; notícia ao nascer), sem esperar o Instagram.
 `NOTICIAS_TODAS_AUTO=0` volta à regra antiga (só nota 8+ de clube grande, sem rumor).
+
+## Comunidade do app: teste e aviso (06/11/2026)
+O envio para a Comunidade (`job_espelho_seutipster`, a cada 2 min) agora:
+- marca de uma vez os posts com mais de `ESPELHO_ATRASO_MAX_H` (6h) e manda até `ESPELHO_LOTE` (10) por volta — antes
+  eram 5 por volta contando os velhos, e o que estava na hora ficava esperando atrás deles;
+- pula o post que o app recusa pelo conteúdo (400) em vez de travar a fila; erro de chave/endereço para a volta;
+- testa a ligação sem criar post (manda texto vazio: o app só recusa depois de conferir a chave, 400 = chave aceita);
+- mostra o motivo em palavras em Ajustes ("App SeuTipster") e tem o botão **Testar o app e mandar agora**
+  (`POST /api/espelho/testar`);
+- avisa no celular do Nog (push do DKC, abre em Ajustes) na 2ª volta seguida com falha, e quando volta a funcionar;
+- aceita a URL sem `https://` ou com caminho, e a chave com aspas/espaço ou com o nome `ROBO_COMUNIDADE_KEY`.
 
 ## Cards: notícia só com texto, jogos e tabela com escudos (05/11/2026, noite)
 Pedido do Nog depois de ver as primeiras artes no ar: **notícias e infos só com a escrita, sem imagem nenhuma**

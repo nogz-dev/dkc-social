@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import asyncpg
 import httpx
@@ -1840,9 +1841,14 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
 ESPELHO_LIGADO = os.getenv("ESPELHO_SEUTIPSTER", "1") != "0"
 ESPELHO_PUSH = {x.strip() for x in os.getenv("ESPELHO_PUSH_LINHAS", "rodada,resultado").split(",") if x.strip()}
 ESPELHO_ATRASO_MAX_H = int(os.getenv("ESPELHO_ATRASO_MAX_H", "6"))   # post velho nao vai; so e marcado
+ESPELHO_LOTE = int(os.getenv("ESPELHO_LOTE", "10"))                   # posts mandados por volta (a cada 2 min)
 # diagnóstico do espelho (aparece em Ajustes → Saúde do sistema e em /api/saude)
+# "conexao" = último teste da ligação com o app: {ok, motivo, em}
 _espelho_estado: dict[str, Any] = {"ultima_volta": None, "ultimo_envio": None, "ultimo_post": None,
-                                   "ultimo_erro": None, "erro_em": None, "enviados": 0}
+                                   "ultimo_erro": None, "erro_em": None, "enviados": 0, "conexao": None}
+# aviso no celular do Nog quando o app para de receber (e quando volta), sem repetir o mesmo aviso
+_espelho_aviso: dict[str, Any] = {"motivo": None, "em": None, "falhas": 0}
+_espelho_trava = asyncio.Lock()
 # para o QG: enviados no dia (zera à meia-noite e no deploy) e falhas seguidas por post
 _espelho_qg_estado: dict[str, Any] = {"dia": None, "enviados": 0, "ignorados": 0, "desde": None, "falhas": {}}
 
@@ -1874,9 +1880,103 @@ def texto_comunidade(legenda: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(linhas)).strip()
 
 
-async def espelhar_um(r, base: str) -> None:
-    alvo = os.getenv("SEUTIPSTER_URL", "").rstrip("/")
-    chave = os.getenv("SEUTIPSTER_ROBO_KEY", "")
+def _espelho_cfg() -> tuple[str, str]:
+    """SEUTIPSTER_URL e a chave do robô, aceitando do jeito que vierem coladas no Railway: sem https://,
+    com aspas ou espaço, com caminho no fim. A chave vale com o nome daqui (SEUTIPSTER_ROBO_KEY) ou com o
+    nome que ela tem no SeuTipster (ROBO_COMUNIDADE_KEY) — é a mesma chave dos dois lados."""
+    limpa = lambda v: (v or "").strip().strip('"').strip("'").strip()
+    url = limpa(os.getenv("SEUTIPSTER_URL"))
+    if url and "://" not in url:
+        url = "https://" + url
+    p = urlparse(url) if url else None
+    alvo = ""
+    if p and p.netloc:
+        local = p.hostname in ("localhost", "127.0.0.1")
+        alvo = f"{'http' if local and p.scheme == 'http' else 'https'}://{p.netloc}"
+    chave = limpa(os.getenv("SEUTIPSTER_ROBO_KEY")) or limpa(os.getenv("ROBO_COMUNIDADE_KEY"))
+    return alvo, chave
+
+
+def _detalhe(resp: httpx.Response) -> str:
+    try:
+        return str(resp.json().get("detail") or "")[:160]
+    except Exception:
+        return (resp.text or "")[:160]
+
+
+def _espelho_motivo(code: int, detalhe: str, alvo: str) -> str:
+    """O erro do app traduzido para o que o Nog precisa fazer."""
+    d = (detalhe or "").lower()
+    if code == 401:
+        return ("Chave diferente: a SEUTIPSTER_ROBO_KEY do DKC Social não é igual à ROBO_COMUNIDADE_KEY do "
+                "SeuTipster. Cole o mesmo valor nos dois e clique em Deploy.")
+    if code == 503 and "robo_comunidade_key" in d:
+        return ("O SeuTipster está sem a ROBO_COMUNIDADE_KEY. Se você já salvou no Railway, falta clicar em "
+                "Deploy no SeuTipster.")
+    if code in (404, 405):
+        return f"O SEUTIPSTER_URL ({alvo}) não é o endereço do app: lá não existe a entrada do robô."
+    if code in (502, 503, 504):
+        return f"O SeuTipster não respondeu ({code}): fora do ar ou reiniciando."
+    if code == 403:
+        return "O SeuTipster bloqueou o DKC Social (403)."
+    return f"O SeuTipster respondeu {code}: {detalhe or 'sem detalhe'}"
+
+
+async def espelho_testar() -> dict:
+    """Testa a ligação DKC Social → Comunidade sem criar nada: manda um post vazio, que o app só recusa
+    DEPOIS de conferir a chave. 400 ("texto vazio") = chave aceita, o caminho está aberto."""
+    alvo, chave = _espelho_cfg()
+    if not ESPELHO_LIGADO:
+        res = {"ok": False, "motivo": "Envio para o app desligado aqui (ESPELHO_SEUTIPSTER=0)."}
+    elif not alvo or not chave:
+        res = {"ok": False, "motivo": "Faltam SEUTIPSTER_URL e SEUTIPSTER_ROBO_KEY no Railway do DKC Social "
+                                      "(se você já salvou, falta clicar em Deploy)."}
+    elif not base_publica().startswith("https://"):
+        res = {"ok": False, "motivo": "Endereço público do DKC Social não configurado (PUBLIC_BASE_URL): "
+                                      "o app não teria de onde puxar as artes."}
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                resp = await c.post(f"{alvo}/api/robo/comunidade", json={"texto": ""}, headers={"x-robo-key": chave})
+            if resp.status_code == 400:
+                res = {"ok": True, "motivo": "Conexão OK: o app aceitou a chave."}
+            else:
+                res = {"ok": False, "motivo": _espelho_motivo(resp.status_code, _detalhe(resp), alvo)}
+        except Exception as e:
+            res = {"ok": False, "motivo": f"Não consegui chegar em {alvo} ({type(e).__name__})."}
+    res["em"] = _iso(datetime.now(timezone.utc))
+    _espelho_estado["conexao"] = res
+    return res
+
+
+async def _espelho_avisar(con: Optional[dict]) -> None:
+    """Push no celular do Nog quando o app para de receber os posts — só na 2ª volta seguida com falha (o
+    SeuTipster reiniciando num deploy não vira alarme) e o mesmo motivo só de novo depois de 6h. Avisa
+    também quando volta a funcionar."""
+    a = _espelho_aviso
+    if not con or not ESPELHO_LIGADO:
+        return
+    try:
+        if con.get("ok"):
+            a["falhas"] = 0
+            if a["motivo"]:
+                a.update(motivo=None, em=None)
+                await enviar_push({"title": "✅ App SeuTipster recebendo de novo",
+                                   "body": "Os posts voltaram a entrar na Comunidade.", "url": "/?ver=ajustes",
+                                   "tag": "espelho"})
+            return
+        a["falhas"] += 1
+        agora = datetime.now(timezone.utc)
+        if a["falhas"] < 2 or (a["motivo"] == con["motivo"] and a["em"] and (agora - a["em"]).total_seconds() < 6 * 3600):
+            return
+        a.update(motivo=con["motivo"], em=agora)
+        await enviar_push({"title": "⚠️ App SeuTipster não está recebendo os posts", "body": con["motivo"][:200],
+                           "url": "/?ver=ajustes", "tag": "espelho"})
+    except Exception as e:
+        log.warning("[ESPELHO] aviso no celular falhou: %s", e)
+
+
+async def espelhar_um(r, base: str, alvo: str, chave: str) -> None:
     midias = await pool.fetch("SELECT token,mime FROM midias WHERE post_id=$1 ORDER BY ordem", r["id"])
     urls = [f"{base}/m/{m['token']}.{MIME_OK[m['mime']]}" for m in midias
             if m["mime"] in MIME_OK and m["mime"].startswith("image/")]
@@ -1892,48 +1992,90 @@ async def espelhar_um(r, base: str) -> None:
         resp.raise_for_status()
 
 
+def _espelho_aguardando_sql() -> str:
+    return ("SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false "
+            "AND COALESCE(sugerido_para, criado_em) <= now()")
+
+
+async def espelho_passada() -> dict:
+    """Uma volta do espelho. A Comunidade recebe tudo sozinha, sem passar pela fila (pedido do Nog,
+    05/11/2026 20h28); "Instagram automático" em Ajustes vale só para o Instagram.
+    1) post com mais de ESPELHO_ATRASO_MAX_H horas só é marcado, todos de uma vez (não despeja histórico no
+       feed e não ocupa a volta — antes eram 5 por volta, e o que estava na hora ficava esperando);
+    2) o resto vai do mais antigo pro mais novo, até ESPELHO_LOTE por volta;
+    3) post que o app recusa pelo conteúdo (400) é pulado, não trava a fila; erro de chave/endereço/app fora
+       do ar vale pra todos, então a volta para ali e tenta de novo na próxima."""
+    out: dict[str, Any] = {"enviados": 0, "pulados": 0, "atrasados": 0, "erro": None}
+    alvo, chave = _espelho_cfg()
+    base = base_publica()
+    if not (ESPELHO_LIGADO and alvo and chave and base.startswith("https://")):
+        return out
+    async with _espelho_trava:
+        _espelho_estado["ultima_volta"] = _iso(datetime.now(timezone.utc))
+        velhos = await pool.fetch(
+            """UPDATE posts SET espelhado_em=now()
+                WHERE espelhado_em IS NULL AND status <> 'recusado'
+                  AND COALESCE(sugerido_para, criado_em) < now() - make_interval(hours => $1)
+            RETURNING id""", ESPELHO_ATRASO_MAX_H)
+        for v in velhos:
+            _espelho_qg_conta("ignorados", v["id"])
+        if velhos:
+            out["atrasados"] = len(velhos)
+            log.info("[ESPELHO] %d post(s) com mais de %sh só marcados, sem mandar", len(velhos), ESPELHO_ATRASO_MAX_H)
+        rows = await pool.fetch(
+            """SELECT id, linha, titulo, legenda, COALESCE(sugerido_para, criado_em) AS quando
+                 FROM posts
+                WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false
+                  AND COALESCE(sugerido_para, criado_em) <= now()
+                ORDER BY quando
+                LIMIT $1""", ESPELHO_LOTE)
+        for r in rows:
+            erro = None
+            try:
+                await espelhar_um(r, base, alvo, chave)
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                if code in (400, 413, 422):   # o app recusou ESTE post (ex.: texto vazio): pula e segue
+                    await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
+                    out["pulados"] += 1
+                    _espelho_qg_conta("ignorados", r["id"])
+                    log.warning("[ESPELHO] post %s recusado pelo app (%s): %s", r["id"], code, _detalhe(e.response))
+                    continue
+                erro = _espelho_motivo(code, _detalhe(e.response), alvo)
+            except Exception as e:
+                erro = f"Não consegui chegar em {alvo} ({type(e).__name__}: {str(e)[:80]})."
+            agora = _iso(datetime.now(timezone.utc))
+            if erro:
+                out["erro"] = erro
+                _espelho_estado.update(ultimo_erro=erro, erro_em=agora, conexao={"ok": False, "motivo": erro, "em": agora})
+                _espelho_qg_conta("falha", r["id"])
+                log.warning("[ESPELHO] post %s não foi, tenta de novo na próxima volta: %s", r["id"], erro)
+                break
+            await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
+            out["enviados"] += 1
+            _espelho_estado.update(ultimo_envio=agora, ultimo_erro=None,
+                                   ultimo_post=f"{r['linha']}: {(r['titulo'] or '')[:80]}",
+                                   enviados=_espelho_estado["enviados"] + 1,
+                                   conexao={"ok": True, "motivo": "Conexão OK: o último post entrou na Comunidade.",
+                                            "em": agora})
+            _espelho_qg_conta("enviados", r["id"])
+            log.info("[ESPELHO] post %s (%s) foi pra Comunidade", r["id"], r["linha"])
+    return out
+
+
 async def job_espelho_seutipster() -> None:
-    """A cada 2 min manda pra Comunidade do SeuTipster os posts cuja hora chegou.
-    Na estreia (e pra post atrasado) so marca como espelhado, sem mandar — senao o
-    primeiro deploy despejaria o historico inteiro no feed de todo mundo."""
-    await asyncio.sleep(45)
+    """A cada 2 min manda pra Comunidade do SeuTipster os posts cuja hora chegou. Sem nada pra mandar e com a
+    ligação ainda não confirmada (deploy novo, ou estava falhando), testa a ligação sem criar post — assim o
+    diagnóstico em Ajustes e o aviso no celular não dependem de sair post novo."""
+    await asyncio.sleep(20)
     while True:
         try:
-            if ESPELHO_LIGADO and os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"):
-                base = base_publica()
-                if base.startswith("https://"):
-                    # a Comunidade recebe tudo sozinha, sem passar pela fila (pedido do Nog, 05/11/2026 20h28);
-                    # "Resultados automáticos" em Ajustes vale só para o Instagram
-                    rows = await pool.fetch(
-                        """SELECT id, linha, titulo, legenda,
-                                  COALESCE(sugerido_para, criado_em) AS quando
-                             FROM posts
-                            WHERE espelhado_em IS NULL
-                              AND status <> 'recusado'
-                              AND arte_pendente = false
-                              AND COALESCE(sugerido_para, criado_em) <= now()
-                            ORDER BY quando
-                            LIMIT 5"""
-                    )
-                    _espelho_estado["ultima_volta"] = _iso(datetime.now(timezone.utc))
-                    for r in rows:
-                        atrasado = (datetime.now(timezone.utc) - r["quando"]).total_seconds() > ESPELHO_ATRASO_MAX_H * 3600
-                        try:
-                            if not atrasado:
-                                await espelhar_um(r, base)
-                                _espelho_estado.update(ultimo_envio=_iso(datetime.now(timezone.utc)), ultimo_erro=None,
-                                                       ultimo_post=f"{r['linha']}: {(r['titulo'] or '')[:80]}",
-                                                       enviados=_espelho_estado["enviados"] + 1)
-                                log.info("[ESPELHO] post %s (%s) foi pra Comunidade", r["id"], r["linha"])
-                                _espelho_qg_conta("enviados", r["id"])
-                            else:
-                                _espelho_qg_conta("ignorados", r["id"])
-                                log.info("[ESPELHO] post %s ignorado: atrasado mais de %sh", r["id"], ESPELHO_ATRASO_MAX_H)
-                            await pool.execute("UPDATE posts SET espelhado_em=now() WHERE id=$1", r["id"])
-                        except Exception as e:
-                            _espelho_estado.update(ultimo_erro=str(e)[:200], erro_em=_iso(datetime.now(timezone.utc)))
-                            _espelho_qg_conta("falha", r["id"])
-                            log.warning("[ESPELHO] post %s falhou, tenta de novo: %s", r["id"], str(e)[:200])
+            if ESPELHO_LIGADO:
+                out = await espelho_passada()
+                con = _espelho_estado.get("conexao")
+                if not out["enviados"] and not out["erro"] and not (con and con.get("ok")):
+                    await espelho_testar()
+                await _espelho_avisar(_espelho_estado.get("conexao"))
         except Exception:
             log.exception("[JOB] espelho seutipster")
         await asyncio.sleep(120)
@@ -2032,10 +2174,24 @@ async def saude(request: Request, _=Depends(exige_login)):
     out["recorte"] = importlib.util.find_spec("rembg") is not None
     out["imagens_openai"] = {**openai_img.status(), "chave": await openai_img.testar_chave()}
     out["fotos_jogadores"] = foto_jogador.STATS
-    out["espelho"] = {"ligado": ESPELHO_LIGADO,
-                      "configurado": bool(os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY")),
-                      "push_linhas": sorted(ESPELHO_PUSH), **_espelho_estado}
+    alvo, chave = _espelho_cfg()
+    try:
+        aguardando = await pool.fetchval(_espelho_aguardando_sql())
+    except Exception:
+        aguardando = None
+    out["espelho"] = {"ligado": ESPELHO_LIGADO, "configurado": bool(alvo and chave), "alvo": alvo,
+                      "aguardando": aguardando, "push_linhas": sorted(ESPELHO_PUSH), **_espelho_estado}
     return out
+
+
+@app.post("/api/espelho/testar")
+async def espelho_testar_agora(_=Depends(exige_login)):
+    """Botão de Ajustes: testa a ligação com o app e, se estiver aberta, já manda o que está esperando."""
+    con = await espelho_testar()
+    out = await espelho_passada() if con.get("ok") else {"enviados": 0, "pulados": 0, "atrasados": 0, "erro": None}
+    await _espelho_avisar(_espelho_estado.get("conexao"))
+    return {"conexao": _espelho_estado.get("conexao") or con, "passada": out,
+            "aguardando": await pool.fetchval(_espelho_aguardando_sql())}
 
 
 # ------------------------------------------------- QG do Nog (status) ----
@@ -2044,11 +2200,10 @@ async def _espelho_qg() -> dict:
     """Espelho na Comunidade do SeuTipster, para o boneco "Comunidade" do QG. Só leitura."""
     _espelho_qg_conta("")
     e = _espelho_qg_estado
-    configurado = bool(os.getenv("SEUTIPSTER_URL") and os.getenv("SEUTIPSTER_ROBO_KEY"))
+    configurado = all(_espelho_cfg())
+    con = _espelho_estado.get("conexao") or {}
     try:
-        aguardando = await pool.fetchval(
-            "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false "
-            "AND COALESCE(sugerido_para, criado_em) <= now()")
+        aguardando = await pool.fetchval(_espelho_aguardando_sql())
         agendados = await pool.fetchval(
             "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' "
             "AND COALESCE(sugerido_para, criado_em) > now()")
@@ -2059,7 +2214,9 @@ async def _espelho_qg() -> dict:
             "enviados_hoje": e["enviados"], "ignorados_hoje": e["ignorados"],
             "desde": e["desde"].isoformat() if e["desde"] else None,
             "ultima_passada": _espelho_estado["ultima_volta"], "ultimo_envio": _espelho_estado["ultimo_envio"],
-            "aguardando": aguardando, "agendados": agendados, "erro": _espelho_estado["ultimo_erro"],
+            "aguardando": aguardando, "agendados": agendados,
+            "erro": _espelho_estado["ultimo_erro"] or (con.get("motivo") if con and not con.get("ok") else None),
+            "conexao": con or None,
             "travados": sum(1 for n in e["falhas"].values() if n >= 3), "push_linhas": sorted(ESPELHO_PUSH)}
 
 
