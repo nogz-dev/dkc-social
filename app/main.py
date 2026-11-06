@@ -1992,9 +1992,19 @@ async def espelhar_um(r, base: str, alvo: str, chave: str) -> None:
         resp.raise_for_status()
 
 
+# Hora em que o post pode ir pra Comunidade: a hora editorial (sugerida, ou a de criação), mas NUNCA depois do
+# Instagram — publicado agora, ou agendado pra antes da hora sugerida, vai junto (pedido do Nog, 06/11/2026:
+# "publiquei agora na hora" e o app esperava a hora sugerida).
+_ESP_ENVIO = ("LEAST(COALESCE(sugerido_para, criado_em), publicado_em, agendar_para, "
+              "CASE WHEN status = 'publicando' AND agendar_para IS NULL THEN decidido_em END)")
+# Post velho (só marca, não manda): a hora dele passou há mais de X h e ninguém publicou nem aprovou nesse tempo.
+_ESP_VELHO = (f"{_ESP_ENVIO} < now() - make_interval(hours => $1) "
+              "AND COALESCE(publicado_em, decidido_em, criado_em) < now() - make_interval(hours => $1)")
+
+
 def _espelho_aguardando_sql() -> str:
     return ("SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false "
-            "AND COALESCE(sugerido_para, criado_em) <= now()")
+            f"AND {_ESP_ENVIO} <= now()")
 
 
 async def espelho_passada() -> dict:
@@ -2013,22 +2023,21 @@ async def espelho_passada() -> dict:
     async with _espelho_trava:
         _espelho_estado["ultima_volta"] = _iso(datetime.now(timezone.utc))
         velhos = await pool.fetch(
-            """UPDATE posts SET espelhado_em=now()
-                WHERE espelhado_em IS NULL AND status <> 'recusado'
-                  AND COALESCE(sugerido_para, criado_em) < now() - make_interval(hours => $1)
-            RETURNING id""", ESPELHO_ATRASO_MAX_H)
+            f"""UPDATE posts SET espelhado_em=now()
+                 WHERE espelhado_em IS NULL AND status <> 'recusado' AND {_ESP_VELHO}
+             RETURNING id""", ESPELHO_ATRASO_MAX_H)
         for v in velhos:
             _espelho_qg_conta("ignorados", v["id"])
         if velhos:
             out["atrasados"] = len(velhos)
             log.info("[ESPELHO] %d post(s) com mais de %sh só marcados, sem mandar", len(velhos), ESPELHO_ATRASO_MAX_H)
         rows = await pool.fetch(
-            """SELECT id, linha, titulo, legenda, COALESCE(sugerido_para, criado_em) AS quando
-                 FROM posts
-                WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false
-                  AND COALESCE(sugerido_para, criado_em) <= now()
-                ORDER BY quando
-                LIMIT $1""", ESPELHO_LOTE)
+            f"""SELECT id, linha, titulo, legenda, {_ESP_ENVIO} AS quando
+                  FROM posts
+                 WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false
+                   AND {_ESP_ENVIO} <= now()
+                 ORDER BY quando
+                 LIMIT $1""", ESPELHO_LOTE)
         for r in rows:
             erro = None
             try:
@@ -2206,7 +2215,7 @@ async def _espelho_qg() -> dict:
         aguardando = await pool.fetchval(_espelho_aguardando_sql())
         agendados = await pool.fetchval(
             "SELECT count(*) FROM posts WHERE espelhado_em IS NULL AND status <> 'recusado' "
-            "AND COALESCE(sugerido_para, criado_em) > now()")
+            f"AND {_ESP_ENVIO} > now()")
     except Exception:
         aguardando = agendados = None
     return {"ligado": ESPELHO_LIGADO and configurado,
