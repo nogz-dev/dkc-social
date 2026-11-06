@@ -52,14 +52,16 @@ nunca depois dele: publicado agora (ou agendado pra antes da hora sugerida) vai 
 `NOTICIAS_TODAS_AUTO=0` volta à regra antiga (só nota 8+ de clube grande, sem rumor).
 
 ## Comunidade do app: teste e aviso (06/11/2026)
-O envio para a Comunidade (`job_espelho_seutipster`, a cada 2 min) agora:
+O envio para a Comunidade (`job_espelho_seutipster`, a cada 1 min; aprovação manda na hora por `_espelho_ja`) agora:
 - marca de uma vez os posts com mais de `ESPELHO_ATRASO_MAX_H` (6h) e manda até `ESPELHO_LOTE` (10) por volta — antes
   eram 5 por volta contando os velhos, e o que estava na hora ficava esperando atrás deles;
 - pula o post que o app recusa pelo conteúdo (400) em vez de travar a fila; erro de chave/endereço para a volta;
 - testa a ligação sem criar post (manda texto vazio: o app só recusa depois de conferir a chave, 400 = chave aceita);
 - mostra o motivo em palavras em Ajustes ("App SeuTipster") e tem o botão **Testar o app e mandar agora**
   (`POST /api/espelho/testar`);
-- avisa no celular do Nog (push do DKC, abre em Ajustes) na 2ª volta seguida com falha, e quando volta a funcionar;
+- avisa no celular do Nog (push do DKC, abre em Ajustes) na 3ª volta seguida com falha, e quando volta a funcionar;
+- aprovar um post sempre o manda pra Comunidade, mesmo o que ficou mais de 6h na fila e tinha sido marcado como velho
+  (`espelhado_em=NULL` na aprovação; se já tinha ido, o app reconhece o `ref` e não duplica nem manda push);
 - aceita a URL sem `https://` ou com caminho, e a chave com aspas/espaço ou com o nome `ROBO_COMUNIDADE_KEY`.
 
 ## Cards: notícia só com texto, jogos e tabela com escudos (05/11/2026, noite)

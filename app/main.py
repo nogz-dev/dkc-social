@@ -1690,15 +1690,18 @@ async def _aprovar_um(pid: uuid.UUID, agendar_para: Optional[datetime], base: st
             linha = await pool.fetchval("SELECT linha FROM posts WHERE id=$1", pid)
             if linha != "resultado":
                 agendar_para = await proximo_horario()
-        # trava otimista: só sai de pendente/erro uma vez, mesmo com 2 aparelhos aprovando juntos
+        # trava otimista: só sai de pendente/erro uma vez, mesmo com 2 aparelhos aprovando juntos.
+        # espelhado_em=NULL: aprovou, vai pra Comunidade também — mesmo o post que ficou mais de 6h na fila e foi
+        # só marcado como velho. Se já tinha ido, o app reconhece o mesmo ref e não duplica (nem manda push).
         row = await pool.fetchrow(
-            "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2 "
+            "UPDATE posts SET status='publicando', decidido_em=now(), erro=NULL, agendar_para=$2, espelhado_em=NULL "
             "WHERE id=$1 AND status IN ('pendente','erro') RETURNING id",
             pid, agendar_para,
         )
     if not row:
         return {"id": str(pid), "ok": False, "erro": "já decidido em outro aparelho"}
     asyncio.create_task(publicar_no_publora(pid, base))
+    asyncio.create_task(_espelho_ja())
     return {"id": str(pid), "ok": True, "sai_em": agendar_para.isoformat() if agendar_para else None}
 
 
@@ -1950,8 +1953,8 @@ async def espelho_testar() -> dict:
 
 
 async def _espelho_avisar(con: Optional[dict]) -> None:
-    """Push no celular do Nog quando o app para de receber os posts — só na 2ª volta seguida com falha (o
-    SeuTipster reiniciando num deploy não vira alarme) e o mesmo motivo só de novo depois de 6h. Avisa
+    """Push no celular do Nog quando o app para de receber os posts — só na 3ª volta seguida com falha (~3 min:
+    o SeuTipster reiniciando num deploy não vira alarme) e o mesmo motivo só de novo depois de 6h. Avisa
     também quando volta a funcionar."""
     a = _espelho_aviso
     if not con or not ESPELHO_LIGADO:
@@ -1967,7 +1970,7 @@ async def _espelho_avisar(con: Optional[dict]) -> None:
             return
         a["falhas"] += 1
         agora = datetime.now(timezone.utc)
-        if a["falhas"] < 2 or (a["motivo"] == con["motivo"] and a["em"] and (agora - a["em"]).total_seconds() < 6 * 3600):
+        if a["falhas"] < 3 or (a["motivo"] == con["motivo"] and a["em"] and (agora - a["em"]).total_seconds() < 6 * 3600):
             return
         a.update(motivo=con["motivo"], em=agora)
         await enviar_push({"title": "⚠️ App SeuTipster não está recebendo os posts", "body": con["motivo"][:200],
@@ -2072,10 +2075,22 @@ async def espelho_passada() -> dict:
     return out
 
 
+async def _espelho_ja() -> None:
+    """Aprovou (ou saiu sozinho) agora: manda pra Comunidade na hora, sem esperar a próxima volta do job."""
+    if not ESPELHO_LIGADO:
+        return
+    await asyncio.sleep(3)
+    try:
+        await espelho_passada()
+    except Exception:
+        log.exception("[ESPELHO] envio na hora da aprovação")
+
+
 async def job_espelho_seutipster() -> None:
-    """A cada 2 min manda pra Comunidade do SeuTipster os posts cuja hora chegou. Sem nada pra mandar e com a
-    ligação ainda não confirmada (deploy novo, ou estava falhando), testa a ligação sem criar post — assim o
-    diagnóstico em Ajustes e o aviso no celular não dependem de sair post novo."""
+    """A cada 1 min manda pra Comunidade do SeuTipster os posts cuja hora chegou (aprovação manda na hora, por
+    _espelho_ja). Sem nada pra mandar e com a ligação ainda não confirmada (deploy novo, ou estava falhando),
+    testa a ligação sem criar post — assim o diagnóstico em Ajustes e o aviso no celular não dependem de sair
+    post novo."""
     await asyncio.sleep(20)
     while True:
         try:
@@ -2087,7 +2102,7 @@ async def job_espelho_seutipster() -> None:
                 await _espelho_avisar(_espelho_estado.get("conexao"))
         except Exception:
             log.exception("[JOB] espelho seutipster")
-        await asyncio.sleep(120)
+        await asyncio.sleep(60)
 
 
 async def job_status_publora() -> None:
