@@ -88,7 +88,9 @@ def _sem_acento(t: str) -> str:
 
 
 NOTICIAS_TODAS_AUTO = os.getenv("NOTICIAS_TODAS_AUTO", "1") != "0"
-NOTICIA_ATRASO_MAX_H = float(os.getenv("NOTICIA_ATRASO_MAX_H", "3"))  # fila do Instagram mais longa que isso: não agenda
+# 0 = sem limite: notícia sempre entra sozinha no próximo horário livre do Instagram, nada espera aprovação
+# (pedido do Nog, 06/11/2026 16h52). >0 = se o próximo horário passar disso, a notícia espera aprovação.
+NOTICIA_ATRASO_MAX_H = float(os.getenv("NOTICIA_ATRASO_MAX_H", "0"))
 
 
 def noticia_sai_sozinha(post: dict, nota_ef: float, problemas: list) -> bool:
@@ -539,7 +541,7 @@ async def criar_post(
         return pid
     if pode_auto and await auto_resultado_ligado():
         quando = sugerido_para if (sugerido_para and sugerido_para > datetime.now(timezone.utc) + timedelta(minutes=3)) else None
-        if linha == "noticia" and quando is None:
+        if linha == "noticia" and quando is None and NOTICIA_ATRASO_MAX_H > 0:
             prox = await proximo_horario()
             if prox and prox - datetime.now(timezone.utc) > timedelta(hours=NOTICIA_ATRASO_MAX_H):
                 # a notícia só entraria no Instagram daqui a horas (já velha): fica na fila; a Comunidade recebe igual
@@ -552,7 +554,7 @@ async def criar_post(
         asyncio.create_task(enviar_push({
             "title": {"rodada": "📅 Rodada do dia", "tabela": "📊 Tabela", "resultado": "✅ Resultado",
                       "noticia": "🚨 Notícia"}[linha]
-                     + (" agendada" if quando else " publicada"),
+                     + (" agendada" if (quando or res.get("sai_em")) else " publicada"),
             "body": titulo or legenda[:80], "url": f"/?post={pid}", "tag": f"post-{pid}",
         }))
     else:

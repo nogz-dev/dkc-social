@@ -45,8 +45,9 @@ POST /api/robo/posts   (header x-robo-key)
 
 ## Tudo automático de novo (06/11/2026)
 Sem foto não há o que aprovar (pedido do Nog): **todas as notícias** saem sozinhas no Instagram, além da Rodada, dos
-Resultados do dia e da tabela ("Instagram automático" em Ajustes, religado no boot uma vez). Notícia entra na grade de
-30 em 30 min; se o próximo horário livre passar de 3h (`NOTICIA_ATRASO_MAX_H`), ela fica na fila para aprovação.
+Resultados do dia e da tabela ("Instagram automático" em Ajustes, religado no boot uma vez). Notícia entra sozinha no
+próximo horário livre da grade de 30 em 30 min, mesmo com a fila longa — nada espera aprovação (pedido do Nog, 06/11
+16h52). `NOTICIA_ATRASO_MAX_H=3` volta a regra antiga (fila do Instagram com mais de 3h: notícia espera aprovação).
 A Comunidade do SeuTipster recebe na hora editorial (Rodada às 9h; notícia ao nascer), sem esperar o Instagram — e
 nunca depois dele: publicado agora (ou agendado pra antes da hora sugerida) vai na mesma hora (`_ESP_ENVIO`).
 `NOTICIAS_TODAS_AUTO=0` volta à regra antiga (só nota 8+ de clube grande, sem rumor).
