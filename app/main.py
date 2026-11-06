@@ -156,6 +156,8 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS fonte_urls JSONB NOT NULL DEFAULT '[]
 -- arte só ao aprovar (notícia): guarda os slides; a OpenAI cria a arte final quando o Nog aprova
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS slides JSONB;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS arte_pendente BOOLEAN NOT NULL DEFAULT false;
+-- noticia urgente (nota 9-10): e o que decide se dispara push na Comunidade
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS urgente BOOLEAN NOT NULL DEFAULT false;
 -- espelho na Comunidade do SeuTipster: marca o que ja foi mandado (nao duplica)
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS espelhado_em TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS posts_status_idx ON posts(status, criado_em DESC);
@@ -905,6 +907,10 @@ async def criar_post_de_slides(body: dict, origem: str) -> tuple[uuid.UUID, list
                            midias=midias, sugerido_para=sug or None, fonte_urls=_links(body), aviso=body.get("aviso"),
                            sem_auto=bool(body.get("sem_auto")) or any(openai_img.AVISO_REVISAR in a for a in avisos),
                            auto=bool(body.get("auto")))
+    # o robo de noticias usa o modelo "urgente" pra bomba de nota 9-10; e so isso
+    # que distingue urgente de noticia comum depois que o post ja foi criado
+    if any((sl or {}).get("modelo") == "urgente" for sl in (body.get("slides") or [])):
+        await pool.execute("UPDATE posts SET urgente=true WHERE id=$1", pid)
     if arte_depois:
         await pool.execute("UPDATE posts SET slides=$2::jsonb, arte_pendente=true WHERE id=$1",
                            pid, json.dumps(body.get("slides") or [], ensure_ascii=False, default=str))
@@ -1866,7 +1872,7 @@ async def publicar_no_publora(pid: uuid.UUID, base: str) -> None:
 # clicado. A arte nao e copiada — mandamos a URL publica de /m/{token}, que e a
 # mesma imagem, servida uma vez so.
 ESPELHO_LIGADO = os.getenv("ESPELHO_SEUTIPSTER", "1") != "0"
-ESPELHO_PUSH = {x.strip() for x in os.getenv("ESPELHO_PUSH_LINHAS", "rodada,resultado").split(",") if x.strip()}
+ESPELHO_PUSH = {x.strip() for x in os.getenv("ESPELHO_PUSH_LINHAS", "rodada,resultado,noticia_urgente").split(",") if x.strip()}
 ESPELHO_ATRASO_MAX_H = int(os.getenv("ESPELHO_ATRASO_MAX_H", "6"))   # post velho nao vai; so e marcado
 ESPELHO_LOTE = int(os.getenv("ESPELHO_LOTE", "10"))                   # posts mandados por volta (a cada 2 min)
 # diagnóstico do espelho (aparece em Ajustes → Saúde do sistema e em /api/saude)
@@ -2003,6 +2009,15 @@ async def _espelho_avisar(con: Optional[dict]) -> None:
         log.warning("[ESPELHO] aviso no celular falhou: %s", e)
 
 
+def _espelho_push(r) -> bool:
+    """Quem apita no celular. Alem das linhas inteiras (rodada, resultado...),
+    "noticia_urgente" na lista liga o push SO pra noticia de nota 9-10 — notificar
+    as 30 noticias do dia e o caminho mais curto pro usuario desligar a notificacao."""
+    if r["linha"] in ESPELHO_PUSH:
+        return True
+    return bool(r.get("urgente")) and "noticia_urgente" in ESPELHO_PUSH
+
+
 async def espelhar_um(r, base: str, alvo: str, chave: str) -> None:
     midias = await pool.fetch("SELECT token,mime FROM midias WHERE post_id=$1 ORDER BY ordem", r["id"])
     urls = [f"{base}/m/{m['token']}.{MIME_OK[m['mime']]}" for m in midias
@@ -2012,7 +2027,7 @@ async def espelhar_um(r, base: str, alvo: str, chave: str) -> None:
         "linha": r["linha"],
         "texto": texto_comunidade(r["legenda"] or r["titulo"] or ""),
         "midias": urls[:10],
-        "push": r["linha"] in ESPELHO_PUSH,
+        "push": _espelho_push(r),
     }
     async with httpx.AsyncClient(timeout=30) as c:
         resp = await c.post(f"{alvo}/api/robo/comunidade", json=corpo, headers={"x-robo-key": chave})
@@ -2059,7 +2074,7 @@ async def espelho_passada() -> dict:
             out["atrasados"] = len(velhos)
             log.info("[ESPELHO] %d post(s) com mais de %sh só marcados, sem mandar", len(velhos), ESPELHO_ATRASO_MAX_H)
         rows = await pool.fetch(
-            f"""SELECT id, linha, titulo, legenda, {_ESP_ENVIO} AS quando
+            f"""SELECT id, linha, titulo, legenda, urgente, {_ESP_ENVIO} AS quando
                   FROM posts
                  WHERE espelhado_em IS NULL AND status <> 'recusado' AND arte_pendente = false
                    AND {_ESP_ENVIO} <= now()
