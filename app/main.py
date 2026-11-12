@@ -1016,6 +1016,9 @@ async def job_pauta() -> None:
     await asyncio.sleep(15)
     while True:
         try:
+            if not em_expediente():
+                await asyncio.sleep(pauta.INTERVALO)
+                continue
             r = await importar_pauta()
             if r.get("novos") or r.get("erros"):
                 log.info("[PAUTA] %s", r)
@@ -1044,6 +1047,22 @@ async def pauta_status(_=Depends(exige_login)):
 
 
 # ------------------------------------------------------- robô: rodada ----
+
+# Horário de trabalho dos robôs que gastam IA sozinhos (pedido do Nog, 11/11/2026): fora dele não rodam
+# notícias, pauta, rodada nem resumos — madrugada só gastava token. EXPEDIENTE="7-23" (início-fim, hora de SP).
+def _expediente() -> tuple[int, int]:
+    try:
+        ini, fim = (int(x) for x in os.getenv("EXPEDIENTE", "7-23").split("-"))
+        return ini, fim
+    except ValueError:
+        return 7, 23
+
+
+def em_expediente(agora: Optional[datetime] = None) -> bool:
+    ini, fim = _expediente()
+    h = (agora or datetime.now(robo_rodada.TZ)).hour
+    return ini <= h < fim if ini < fim else (h >= ini or h < fim)
+
 
 RODADA_HORA = int(os.getenv("RODADA_HORA", "6"))  # plano B: se o lote da noite não deu, monta na hora às 6h
 RODADA_PREPARO_HORA = int(os.getenv("RODADA_PREPARO_HORA", "20"))  # monta a rodada de AMANHÃ às 20h, em lote (50% mais barato)
@@ -1153,7 +1172,7 @@ async def job_rodada() -> None:
         try:
             agora = datetime.now(robo_rodada.TZ)
             hoje, amanha = agora.date(), agora.date() + timedelta(days=1)
-            if robo_rodada.chave():
+            if robo_rodada.chave() and em_expediente(agora):
                 if agora.hour >= RODADA_PREPARO_HORA:
                     await preparar_rodada_lote(amanha)
                 for d in (hoje, amanha):
@@ -1297,7 +1316,7 @@ async def job_tabelas_resumo() -> None:
     await asyncio.sleep(90)
     while True:
         try:
-            if robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0":
+            if robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0" and em_expediente():
                 r = await ciclo_tabelas_resumo()
                 _tabelas_estado.update(ultima=_iso(datetime.now(timezone.utc)), erro=None)
                 if r["feitos"]:
@@ -1346,7 +1365,7 @@ async def job_resultados() -> None:
             # pedido do Nog (17/10/2026): sem post por jogo; só o resumo geral "Resultados do dia"
             # (job_tabelas_resumo). Para voltar o post por jogo: RESULTADO_POR_JOGO=1 no Railway.
             if (robo_rodada.chave() and (await cfg_get("resultados_ligado")) != "0"
-                    and os.getenv("RESULTADO_POR_JOGO", "0") == "1"):
+                    and os.getenv("RESULTADO_POR_JOGO", "0") == "1" and em_expediente()):
                 r = await ciclo_resultados()
                 if r.get("postados"):
                     log.info("[RESULTADOS] %s", r)
@@ -1569,7 +1588,7 @@ async def job_noticias() -> None:
     await asyncio.sleep(60)
     while True:
         try:
-            if await noticias_ligado():
+            if await noticias_ligado() and em_expediente():
                 r = await ciclo_noticias()
                 if r.get("posts"):
                     log.info("[NOTICIAS] %s", r)
@@ -2361,6 +2380,7 @@ async def qg_status(_=Depends(exige_qg)):
         },
         "espelho": await _espelho_qg(),
         # Gestor de Tokens do QG: uso de IA por dia/modelo/origem (últimos 7 dias). Preço é calculado no QG.
+        "expediente": {"inicio": _expediente()[0], "fim": _expediente()[1], "agora": em_expediente()},
         "ia": {"dias": await uso_ia.resumo(7), "limite_imagens_dia": openai_img.LIMITE_DIA,
                "qualidade_imagem": openai_img.QUALIDADE, "tamanho_imagem": openai_img.TAMANHO,
                "tentativas_arte": openai_img.TENTATIVAS},
